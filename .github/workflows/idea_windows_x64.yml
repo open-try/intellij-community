@@ -1,0 +1,95 @@
+# .github/workflows/idea_windows_x64.yml
+name: IntelliJ IDEA — Windows x64 (manual)
+
+on:
+  # Manual trigger only
+  workflow_dispatch: {}
+
+# Prevent accidental parallel builds of the same ref
+concurrency:
+  group: idea-win64-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows-x64:
+    name: Build IDEA-<Version>.exe (Windows x64)
+    # Enforce running from master only (workflow_dispatch itself doesn't support branch filters)
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    timeout-minutes: 480
+
+    env:
+      PRODUCT: intellij_idea
+      TARGET_OS: windows
+      TARGET_ARCH: x64
+      ARTIFACTS_DIR: out/idea-ce/artifacts
+
+    steps:
+      - name: Checkout fork (intellij-community)
+        uses: actions/checkout@v4.2.2
+
+      - name: Checkout JetBrains/android (same ref)
+        uses: actions/checkout@v4.2.2
+        with:
+          repository: JetBrains/android
+          path: android
+          ref: ${{ github.ref }}
+
+      - name: Build Docker environment for ${{ env.PRODUCT }}
+        shell: bash
+        run: |
+          docker build . \
+            --target "${PRODUCT}" \
+            --tag "${PRODUCT}"
+
+      - name: Build Windows x64 .exe via Docker
+        shell: bash
+        run: |
+          # Build only Windows + x64.
+          # 'intellij.build.target.os' and 'intellij.build.target.arch' are official build properties.
+          # Optionally skip the Windows .zip step to save time/artifacts.
+          docker run --rm \
+            --user "$(id -u)" \
+            --volume "${PWD}:/community" \
+            "${PRODUCT}" \
+            -Dintellij.build.target.os="${TARGET_OS}" \
+            -Dintellij.build.target.arch="${TARGET_ARCH}" \
+            -Dintellij.build.skip.build.steps=windows_zip_archive
+
+      - name: List produced files (debug)
+        if: always()
+        shell: bash
+        run: |
+          echo "Contents of ${ARTIFACTS_DIR}:"
+          ls -lah "${ARTIFACTS_DIR}" || true
+
+      - name: Generate SHA-256 checksums for .exe (+ SPDX if present)
+        shell: bash
+        run: |
+          set -euo pipefail
+          checksum() {
+            local f="$1"
+            if [ "$(uname)" = "Darwin" ]; then
+              shasum --algorithm 256 --binary "$f"
+            else
+              sha256sum --binary "$f"
+            fi > "$f.sha256"
+          }
+          cd "${ARTIFACTS_DIR}"
+          shopt -s nullglob
+          for it in *.exe; do echo "checksum: $it"; checksum "$it"; done
+          for it in *.exe.spdx.json; do echo "checksum: $it"; checksum "$it"; done
+
+      - name: Upload Windows x64 .exe and checksums
+        uses: actions/upload-artifact@v4.4.3
+        with:
+          name: windows-x64-exe-unsigned
+          if-no-files-found: error
+          retention-days: 7
+          path: |
+            ${{ env.ARTIFACTS_DIR }}/*.exe
+            ${{ env.ARTIFACTS_DIR }}/*.spdx.json
+            ${{ env.ARTIFACTS_DIR }}/*.sha256
