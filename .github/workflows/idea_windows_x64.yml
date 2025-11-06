@@ -15,11 +15,11 @@ permissions:
 
 jobs:
   build-windows-x64:
-    name: Build IDEA-<Version>.exe (Windows x64)
-    # Enforce running from master only (workflow_dispatch itself doesn't support branch filters)
+    name: Build IDEA.exe (Windows x64)
+    # Only allow manual runs on master
     if: github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
-    timeout-minutes: 480
+    timeout-minutes: 60
 
     env:
       PRODUCT: intellij_idea
@@ -30,6 +30,27 @@ jobs:
     steps:
       - name: Checkout fork (intellij-community)
         uses: actions/checkout@v4.2.2
+
+      - name: Compute date + read build.txt + compute version tag
+        id: versioning
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Date in UTC, pattern YYYYMMDD
+          BUILD_DATE="$(date -u +%Y%m%d)"
+          echo "BUILD_DATE=$BUILD_DATE" | tee -a "$GITHUB_ENV"
+
+          # Read version from top-level build.txt, e.g. 261.SNAPSHOT
+          VERSION_RAW="$(tr -d '\r\n' < build.txt)"
+          echo "VERSION_RAW=$VERSION_RAW" | tee -a "$GITHUB_ENV"
+
+          # Replace SNAPSHOT with date -> YYYYMMDD
+          VERSION_TAG="${VERSION_RAW/SNAPSHOT/${BUILD_DATE}}"
+          echo "VERSION_TAG=$VERSION_TAG" | tee -a "$GITHUB_ENV"
+
+          # Final zip filename per your schema: windows-exe-version-unsigned.zip
+          ZIP_NAME="windows-exe-${VERSION_TAG}-unsigned.zip"
+          echo "ZIP_NAME=$ZIP_NAME" | tee -a "$GITHUB_ENV"
 
       - name: Checkout JetBrains/android (same ref)
         uses: actions/checkout@v4.2.2
@@ -48,9 +69,7 @@ jobs:
       - name: Build Windows x64 .exe via Docker
         shell: bash
         run: |
-          # Build only Windows + x64.
-          # 'intellij.build.target.os' and 'intellij.build.target.arch' are official build properties.
-          # Optionally skip the Windows .zip step to save time/artifacts.
+          # Build only Windows + x64, and skip upstream Windows zip distribution to save time
           docker run --rm \
             --user "$(id -u)" \
             --volume "${PWD}:/community" \
@@ -79,17 +98,55 @@ jobs:
             fi > "$f.sha256"
           }
           cd "${ARTIFACTS_DIR}"
-          shopt -s nullglob
           for it in *.exe; do echo "checksum: $it"; checksum "$it"; done
-          for it in *.exe.spdx.json; do echo "checksum: $it"; checksum "$it"; done
+          for it in *.exe.spdx.json 2>/dev/null; do echo "checksum: $it"; checksum "$it"; done
 
-      - name: Upload Windows x64 .exe and checksums
+      - name: Package unsigned Windows exe into versioned zip
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "${ARTIFACTS_DIR}"
+          ZIP_PATH="${{ github.workspace }}/${ZIP_NAME}"
+
+          # Include the unsigned .exe, its checksum(s), and SPDX (if present)
+          # If spdx or sha256 are missing, zip will warn about no matches; ensure exe exists.
+          ls -l *.exe
+          zip -9 -y "$ZIP_PATH" *.exe *.spdx.json *.sha256 2>/dev/null || \
+          zip -9 -y "$ZIP_PATH" *.exe
+
+          echo "ZIP_PATH=$ZIP_PATH" >> "$GITHUB_ENV"
+
+      - name: Upload versioned zip
         uses: actions/upload-artifact@v4.4.3
         with:
-          name: windows-x64-exe-unsigned
+          name: ${{ env.ZIP_NAME }}
           if-no-files-found: error
-          retention-days: 7
-          path: |
-            ${{ env.ARTIFACTS_DIR }}/*.exe
-            ${{ env.ARTIFACTS_DIR }}/*.spdx.json
-            ${{ env.ARTIFACTS_DIR }}/*.sha256
+          retention-days: 1
+          path: ${{ env.ZIP_PATH }}
+
+      - name: Cleanup (Docker, workspace)
+        if: always()
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          echo "::group::Docker cleanup"
+          # Stop & remove any leftover containers (best effort)
+          docker ps -aq | xargs -r docker rm -f || true
+          # Remove image we created (PRODUCT tag) and everything else unused
+          docker images --format '{{.Repository}}:{{.Tag}}' | grep -E "^${PRODUCT}:" | xargs -r docker rmi -f || true
+          docker builder prune -af || true
+          docker image prune -af || true
+          docker container prune -f || true
+          docker volume prune -f || true
+          echo "::endgroup::"
+
+          echo "::group::Workspace cleanup"
+          # Remove build outputs and auxiliary checkouts
+          rm -rf "${ARTIFACTS_DIR}" || true
+          rm -rf android out || true
+
+          # Deep clean the repo workspace (including hidden files like .git)
+          # Do this at the very end so it doesn't interfere with upload steps
+          git clean -ffdx || true
+          echo "::endgroup::"
