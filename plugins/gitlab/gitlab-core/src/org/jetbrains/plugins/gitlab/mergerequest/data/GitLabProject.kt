@@ -17,13 +17,19 @@ import org.jetbrains.plugins.gitlab.api.dto.GitLabUserDTO
 import org.jetbrains.plugins.gitlab.api.dto.GitLabWorkItemDTO.GitLabWidgetDTO.WorkItemWidgetAssignees
 import org.jetbrains.plugins.gitlab.api.dto.GitLabWorkItemDTO.WorkItemType
 import org.jetbrains.plugins.gitlab.api.request.*
-import org.jetbrains.plugins.gitlab.data.GitLabImageLoader
 import org.jetbrains.plugins.gitlab.mergerequest.api.dto.GitLabMergeRequestDTO
 import org.jetbrains.plugins.gitlab.mergerequest.api.request.loadMergeRequest
 import org.jetbrains.plugins.gitlab.mergerequest.api.request.mergeRequestSetReviewers
-import org.jetbrains.plugins.gitlab.mergerequest.ui.GitLabContextDataLoader
+import org.jetbrains.plugins.gitlab.upload.markdownUploadFile
 import org.jetbrains.plugins.gitlab.util.GitLabProjectMapping
 import org.jetbrains.plugins.gitlab.util.GitLabRegistry
+import org.jetbrains.plugins.gitlab.util.GitLabStatistics
+import java.awt.image.BufferedImage
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
+import java.nio.file.Files
+import java.nio.file.Path
+import javax.imageio.ImageIO
 
 
 private val LOG = logger<GitLabProject>()
@@ -55,7 +61,9 @@ interface GitLabProject {
 
   fun reloadData()
 
-  val contextDataLoader: GitLabContextDataLoader
+  suspend fun uploadFile(path: Path): String
+  suspend fun uploadImage(image: BufferedImage): String
+  fun canUploadFile(): Boolean
 }
 
 @CodeReviewDomainEntity
@@ -68,7 +76,6 @@ class GitLabLazyProject(
   private val initialData: GitLabProjectDTO,
   private val currentUser: GitLabUserDTO,
   private val tokenRefreshFlow: Flow<Unit>,
-  imageLoader: GitLabImageLoader
 ) : GitLabProject {
 
   private val cs = parentCs.childScope(javaClass.name)
@@ -85,10 +92,6 @@ class GitLabLazyProject(
     loadMultipleReviewersAllowed(initialData)
   }
   override val gitLabProjectId: GitLabId = initialData.id
-
-  private val uploadFileUrlBase: String = projectMapping.repository.serverPath.toString() + "/-/project/" + gitLabProjectId.guessRestId() + "/uploads/"
-
-  override val contextDataLoader: GitLabContextDataLoader = GitLabContextDataLoader(imageLoader, uploadFileUrlBase)
 
   override val mergeRequests by lazy {
     CachingGitLabProjectMergeRequestsStore(project, cs, api, glMetadata, projectMapping, currentUser, tokenRefreshFlow)
@@ -160,6 +163,36 @@ class GitLabLazyProject(
     labelsLoader.cancel()
     membersLoader.cancel()
     _dataReloadSignal.tryEmit(Unit)
+  }
+
+  override suspend fun uploadFile(path: Path): String {
+    val uploadRestDTO = withContext(cs.coroutineContext + Dispatchers.IO) {
+      val filename = path.fileName.toString()
+      val mimeType = Files.probeContentType(path) ?: "application/octet-stream"
+      Files.newInputStream(path).use {
+        api.rest.markdownUploadFile(projectCoordinates, filename, mimeType, it).body()
+      }
+    }
+    GitLabStatistics.logFileUploadActionExecuted(project)
+    return uploadRestDTO.markdown
+  }
+
+  override suspend fun uploadImage(image: BufferedImage): String {
+    val uploadRestDTO = withContext(cs.coroutineContext + Dispatchers.IO) {
+      val byteArray = ByteArrayOutputStream().use { outputStream ->
+        ImageIO.write(image, "PNG", outputStream)
+        outputStream.toByteArray()
+      }
+      ByteArrayInputStream(byteArray).use {
+        api.rest.markdownUploadFile(projectCoordinates, "image.png", "image/png", it).body()
+      }
+    }
+    GitLabStatistics.logFileUploadActionExecuted(project)
+    return uploadRestDTO.markdown
+  }
+
+  override fun canUploadFile(): Boolean {
+    return glMetadata != null && glMetadata.version >= GitLabVersion(15, 10)
   }
 
   private suspend fun getAllowsMultipleAssigneesPropertyFromNamespacePlan() = try {

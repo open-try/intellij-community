@@ -190,6 +190,7 @@ public final class GitHandlerAuthenticationManager implements AutoCloseable {
 
     GitCommand command = myHandler.getCommand();
     boolean isCommandSupported = command == GitCommand.COMMIT
+                                 || command == GitCommand.REVERT
                                  || command == GitCommand.TAG
                                  || command == GitCommand.MERGE
                                  || command == GitCommand.CHERRY_PICK
@@ -209,8 +210,8 @@ public final class GitHandlerAuthenticationManager implements AutoCloseable {
 
     if (GitGpgConfigUtilsKt.isGpgSignEnabledCached(repo)) {
       PinentryService.PinentryData pinentryData;
-      if (gitExecutable instanceof GitExecutable.Eel) {
-        pinentryData = PinentryService.getInstance(myProject).startSession(((GitExecutable.Eel)gitExecutable).getEel());
+      if (gitExecutable instanceof GitExecutable.Eel gitExecutableEel) {
+        pinentryData = PinentryService.getInstance(myProject).startSession(gitExecutableEel.getEel());
       }
       else {
         pinentryData = PinentryService.getInstance(myProject).startSession(null);
@@ -226,8 +227,8 @@ public final class GitHandlerAuthenticationManager implements AutoCloseable {
                                            @NotNull ExternalProcessHandlerService<?> service) throws IOException {
     GitExecutable executable = myHandler.getExecutable();
     String scriptPath;
-    if (executable instanceof GitExecutable.Eel) {
-      EelApi eelApi = ((GitExecutable.Eel)executable).getEel();
+    if (executable instanceof GitExecutable.Eel gitExecutableEel) {
+      EelApi eelApi = gitExecutableEel.getEel();
       Path scriptFile = service.getCallbackScriptPath(eelApi, shouldUseBatchScript(executable), myDisposable);
       scriptPath = executable.convertFilePath(scriptFile);
     }

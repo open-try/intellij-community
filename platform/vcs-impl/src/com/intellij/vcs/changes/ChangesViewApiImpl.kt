@@ -1,31 +1,30 @@
 // Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.vcs.changes
 
-import com.intellij.openapi.components.serviceAsync
+import com.intellij.openapi.application.EDT
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.diagnostic.trace
-import com.intellij.openapi.project.Project
-import com.intellij.openapi.vcs.changes.ChangesViewManager
+import com.intellij.openapi.vcs.AbstractVcsHelper
+import com.intellij.openapi.vcs.changes.ChangesUtil
 import com.intellij.openapi.vcs.changes.InclusionListener
 import com.intellij.openapi.vcs.changes.InclusionModel
 import com.intellij.platform.project.ProjectId
 import com.intellij.platform.vcs.impl.shared.rpc.BackendChangesViewEvent
+import com.intellij.platform.vcs.impl.shared.rpc.ChangeId
 import com.intellij.platform.vcs.impl.shared.rpc.ChangesViewApi
 import com.intellij.platform.vcs.impl.shared.rpc.InclusionDto
-import com.intellij.vcs.changes.viewModel.RpcChangesViewProxy
+import com.intellij.vcs.changes.viewModel.getRpcChangesView
 import com.intellij.vcs.rpc.ProjectScopeRpcHelper.projectScoped
 import com.intellij.vcs.rpc.ProjectScopeRpcHelper.projectScopedCallbackFlow
-import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.SendChannel
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.launch
 
 internal class ChangesViewApiImpl : ChangesViewApi {
   override suspend fun getBackendChangesViewEvents(projectId: ProjectId): Flow<BackendChangesViewEvent> =
     projectScopedCallbackFlow(projectId) { project, _ ->
-      val changesViewModel = getChangesModel(project)
+      val changesViewModel = project.getRpcChangesView()
 
       launch {
         changesViewModel.inclusionModel.collectLatest { newModel ->
@@ -48,8 +47,16 @@ internal class ChangesViewApiImpl : ChangesViewApi {
 
   override suspend fun notifyRefreshPerformed(projectId: ProjectId, refreshCounter: Int) = projectScoped(projectId) { project ->
     LOG.trace { "Refresh performed ($refreshCounter)" }
-    val changesViewModel = getChangesModel(project)
-    changesViewModel.refreshPerformed(refreshCounter)
+    project.getRpcChangesView().refreshPerformed(refreshCounter)
+  }
+
+  override suspend fun showResolveConflictsDialog(projectId: ProjectId, changeIds: List<ChangeId>) = projectScoped(projectId) { project ->
+    LOG.trace { "Showing resolve conflicts dialog for ${changeIds.size} changes" }
+    val cache = ChangeListChangeIdCache.getInstance(project)
+    val changes = changeIds.mapNotNull { cache.getChange(it) }
+    withContext(Dispatchers.EDT) {
+      AbstractVcsHelper.getInstance(project).showMergeDialog(ChangesUtil.iterateFiles(changes).toList())
+    }
   }
 
   private suspend fun handleNewInclusionModel(newModel: InclusionModel, channel: SendChannel<BackendChangesViewEvent>): Nothing {
@@ -74,9 +81,6 @@ internal class ChangesViewApiImpl : ChangesViewApi {
       }
     }
   }
-
-  private suspend fun getChangesModel(project: Project): RpcChangesViewProxy =
-    project.serviceAsync<ChangesViewManager>().changesView as RpcChangesViewProxy
 
   companion object {
     private val LOG = logger<ChangesViewApiImpl>()

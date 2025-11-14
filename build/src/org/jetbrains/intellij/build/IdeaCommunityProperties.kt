@@ -10,10 +10,7 @@ import org.jetbrains.intellij.build.impl.qodana.QodanaProductProperties
 import org.jetbrains.intellij.build.io.copyDir
 import org.jetbrains.intellij.build.io.copyFileToDir
 import org.jetbrains.intellij.build.kotlin.KotlinBinaries
-import org.jetbrains.intellij.build.productLayout.CommunityModuleSets
-import org.jetbrains.intellij.build.productLayout.ModuleSetProvider
-import org.jetbrains.intellij.build.productLayout.ProductModulesContentSpec
-import org.jetbrains.intellij.build.productLayout.productModules
+import org.jetbrains.intellij.build.productLayout.*
 import java.nio.file.Path
 
 val MAVEN_ARTIFACTS_ADDITIONAL_MODULES: PersistentList<String> = persistentListOf(
@@ -27,8 +24,7 @@ val MAVEN_ARTIFACTS_ADDITIONAL_MODULES: PersistentList<String> = persistentListO
   "intellij.maven.testFramework",
   "intellij.tools.reproducibleBuilds.diff",
   "intellij.space.java.jps",
-  *JewelMavenArtifacts.STANDALONE.keys.toTypedArray(),
-)
+) + JewelMavenArtifacts.STANDALONE.keys
 
 internal suspend fun createCommunityBuildContext(
   options: BuildOptions,
@@ -40,14 +36,9 @@ internal suspend fun createCommunityBuildContext(
   options = options,
 )
 
-open class IdeaCommunityProperties(private val communityHomeDir: Path) : BaseIdeaProperties() {
-  override val moduleSetsProviders: List<ModuleSetProvider>
-    get() = listOf(CommunityModuleSets)
-
-  override val baseFileName: String
-    get() = "idea"
-
+open class IdeaCommunityProperties(private val communityHomeDir: Path) : JetBrainsProductProperties() {
   init {
+    configurePropertiesForAllEditionsOfIntelliJIdea(this)
     platformPrefix = "Idea"
     applicationInfoModule = "intellij.idea.community.customization"
     scrambleMainJar = false
@@ -65,25 +56,21 @@ open class IdeaCommunityProperties(private val communityHomeDir: Path) : BaseIde
 
     productLayout.prepareCustomPluginRepositoryForPublishedPlugins = false
     productLayout.buildAllCompatiblePlugins = true
-    productLayout.pluginLayouts = CommunityRepositoryModules.COMMUNITY_REPOSITORY_PLUGINS.addAll(listOf(
+    productLayout.pluginLayouts = CommunityRepositoryModules.COMMUNITY_REPOSITORY_PLUGINS + persistentListOf(
       JavaPluginLayout.javaPlugin(),
       CommunityRepositoryModules.androidPlugin(allPlatforms = true),
       CommunityRepositoryModules.groovyPlugin(),
-    ))
-
-    productLayout.addPlatformSpec { layout, _ ->
-      layout.withModule("intellij.platform.structuralSearch")
-    }
+    )
 
     productLayout.skipUnresolvedContentModules = true
 
     mavenArtifacts.forIdeModules = true
-    mavenArtifacts.additionalModules = mavenArtifacts.additionalModules.addAll(MAVEN_ARTIFACTS_ADDITIONAL_MODULES)
-    mavenArtifacts.squashedModules = mavenArtifacts.squashedModules.addAll(persistentListOf(
+    mavenArtifacts.additionalModules += MAVEN_ARTIFACTS_ADDITIONAL_MODULES
+    mavenArtifacts.squashedModules += persistentListOf(
       "intellij.platform.util.base",
       "intellij.platform.util.base.multiplatform",
       "intellij.platform.util.zip",
-    ))
+    )
     mavenArtifacts.validateForMavenCentralPublication = { module ->
       JewelMavenArtifacts.isPublishedJewelModule(module)
     }
@@ -120,47 +107,19 @@ open class IdeaCommunityProperties(private val communityHomeDir: Path) : BaseIde
     additionalVmOptions = persistentListOf("-Dllm.show.ai.promotion.window.on.start=false")
   }
 
-  override fun getProductContentDescriptor(): ProductModulesContentSpec {
-    return getIntelliJCommunityProductContentDescriptor(includeCommunityExtensions = true)
+  override val moduleSetsProviders: List<ModuleSetProvider>
+    get() = listOf(CommunityModuleSets)
+
+  override val baseFileName: String
+    get() = "idea"
+
+  override fun getProductContentDescriptor(): ProductModulesContentSpec = productModules {
+    include(intellijCommunityBaseFragment())
+    include(communityExtensionsFragment())
   }
 
-  protected fun getIntelliJCommunityProductContentDescriptor(
-    includeCommunityExtensions: Boolean,
-  ): ProductModulesContentSpec = productModules {
-    alias("com.intellij.modules.idea")
-    alias("com.intellij.modules.idea.community")
-    alias("com.intellij.modules.java-capable")
-    alias("com.intellij.modules.python-core-capable")
-    alias("com.intellij.modules.python-in-non-pycharm-ide-capable")
-    alias("com.intellij.platform.ide.provisioner")
-
-    deprecatedInclude("intellij.java.ide.resources", "META-INF/JavaIdePlugin.xml")
-    deprecatedInclude("intellij.idea.community.customization", "META-INF/tips-intellij-idea-community.xml")
-
-    moduleSet(CommunityModuleSets.debuggerStreams())
-
-    module("intellij.platform.coverage")
-    module("intellij.platform.coverage.agent")
-    module("intellij.xml.xmlbeans")
-    module("intellij.platform.ide.newUiOnboarding")
-    module("intellij.platform.ide.newUsersOnboarding")
-    module("intellij.ide.startup.importSettings")
-    module("intellij.platform.customization.min")
-    module("intellij.idea.customization.base")
-    module("intellij.idea.customization.backend")
-    module("intellij.platform.tips")
-
-    moduleSet(CommunityModuleSets.ideCommon())
-    moduleSet(CommunityModuleSets.rdCommon())
-
-    if (includeCommunityExtensions) {
-      deprecatedInclude("intellij.platform.extended.community.impl", "META-INF/community-extensions.xml", ultimateOnly = true)
-    }
-    deprecatedInclude("intellij.idea.community.customization", "META-INF/community-customization.xml")
-  }
-
-  override suspend fun copyAdditionalFiles(context: BuildContext, targetDir: Path) {
-    super.copyAdditionalFiles(context, targetDir)
+  override suspend fun copyAdditionalFiles(targetDir: Path, context: BuildContext) {
+    super.copyAdditionalFiles(targetDir, context)
 
     copyFileToDir(context.paths.communityHomeDir.resolve("LICENSE.txt"), targetDir)
     copyFileToDir(context.paths.communityHomeDir.resolve("NOTICE.txt"), targetDir)
@@ -175,7 +134,7 @@ open class IdeaCommunityProperties(private val communityHomeDir: Path) : BaseIde
 
   protected open suspend fun bundleExternalPlugins(context: BuildContext, targetDirectory: Path) {}
 
-  override fun createWindowsCustomizer(projectHome: String): WindowsDistributionCustomizer = CommunityWindowsDistributionCustomizer()
+  override fun createWindowsCustomizer(projectHome: Path): WindowsDistributionCustomizer = CommunityWindowsDistributionCustomizer()
 
   override fun createLinuxCustomizer(projectHome: String): LinuxDistributionCustomizer = CommunityLinuxDistributionCustomizer()
 
@@ -183,11 +142,13 @@ open class IdeaCommunityProperties(private val communityHomeDir: Path) : BaseIde
 
   protected open inner class CommunityWindowsDistributionCustomizer : WindowsDistributionCustomizer() {
     init {
-      icoPath = "${communityHomeDir}/build/conf/ideaCE/win/images/idea_CE.ico"
-      icoPathForEAP = "${communityHomeDir}/build/conf/ideaCE/win/images/idea_CE_EAP.ico"
-      installerImagesPath = "${communityHomeDir}/build/conf/ideaCE/win/images"
-      fileAssociations = listOf("java", "gradle", "groovy", "kt", "kts", "pom")
+      icoPath = communityHomeDir.resolve("build/conf/ideaCE/win/images/idea_CE.ico")
+      icoPathForEAP = communityHomeDir.resolve("build/conf/ideaCE/win/images/idea_CE_EAP.ico")
+      installerImagesPath = communityHomeDir.resolve("build/conf/ideaCE/win/images")
     }
+
+    override val fileAssociations: List<String>
+      get() = listOf("java", "gradle", "groovy", "kt", "kts", "pom")
 
     override fun getFullNameIncludingEdition(appInfo: ApplicationInfoProperties): String = "IntelliJ IDEA Community Edition"
 
@@ -211,12 +172,12 @@ open class IdeaCommunityProperties(private val communityHomeDir: Path) : BaseIde
     override fun getRootDirectoryName(appInfo: ApplicationInfoProperties, buildNumber: String): String = "idea-IC-$buildNumber"
 
     override fun generateExecutableFilesPatterns(
-      context: BuildContext,
       includeRuntime: Boolean,
       arch: JvmArchitecture,
       targetLibcImpl: LibcImpl,
+      context: BuildContext,
     ): Sequence<String> {
-      return super.generateExecutableFilesPatterns(context, includeRuntime, arch, targetLibcImpl)
+      return super.generateExecutableFilesPatterns(includeRuntime, arch, targetLibcImpl, context)
         .plus(KotlinBinaries.kotlinCompilerExecutables)
         .filterNot { it == "plugins/**/*.sh" }
     }
@@ -242,8 +203,8 @@ open class IdeaCommunityProperties(private val communityHomeDir: Path) : BaseIde
       }
     }
 
-    override fun generateExecutableFilesPatterns(context: BuildContext, includeRuntime: Boolean, arch: JvmArchitecture): Sequence<String> {
-      return super.generateExecutableFilesPatterns(context, includeRuntime, arch)
+    override fun generateExecutableFilesPatterns(includeRuntime: Boolean, arch: JvmArchitecture, context: BuildContext): Sequence<String> {
+      return super.generateExecutableFilesPatterns(includeRuntime, arch, context)
         .plus(KotlinBinaries.kotlinCompilerExecutables)
         .filterNot { it == "plugins/**/*.sh" }
     }
@@ -256,4 +217,46 @@ open class IdeaCommunityProperties(private val communityHomeDir: Path) : BaseIde
   override fun getBaseArtifactName(appInfo: ApplicationInfoProperties, buildNumber: String): String = "ideaIC-$buildNumber"
 
   override fun getOutputDirectoryName(appInfo: ApplicationInfoProperties): String = "idea-ce"
+}
+
+/**
+ * Base IntelliJ Community content fragment.
+ * This fragment is composable - subclasses can include this and optionally add community extensions.
+ */
+fun intellijCommunityBaseFragment(): ProductModulesContentSpec = productModules {
+  alias("com.intellij.modules.idea")
+  alias("com.intellij.modules.idea.community")
+  alias("com.intellij.modules.java-capable")
+  alias("com.intellij.modules.python-core-capable")
+  alias("com.intellij.modules.python-in-non-pycharm-ide-capable")
+  alias("com.intellij.platform.ide.provisioner")
+
+  include(CommunityProductFragments.javaIdeBaseFragment())
+  deprecatedInclude("intellij.idea.community.customization", "META-INF/tips-intellij-idea-community.xml")
+
+  moduleSet(CommunityModuleSets.debuggerStreams())
+
+  module("intellij.platform.coverage")
+  module("intellij.platform.coverage.agent")
+  module("intellij.xml.xmlbeans")
+  module("intellij.platform.ide.newUiOnboarding")
+  module("intellij.platform.ide.newUsersOnboarding")
+  module("intellij.ide.startup.importSettings")
+  module("intellij.platform.customization.min")
+  module("intellij.idea.customization.base")
+  module("intellij.idea.customization.backend")
+  module("intellij.platform.tips")
+
+  moduleSet(CommunityModuleSets.ideCommon())
+  moduleSet(CommunityModuleSets.rdCommon())
+
+  deprecatedInclude("intellij.idea.community.customization", "META-INF/community-customization.xml")
+}
+
+/**
+ * Community extensions fragment for Ultimate builds.
+ * This fragment is composable - subclasses can choose to include or exclude it.
+ */
+fun communityExtensionsFragment(): ProductModulesContentSpec = productModules {
+  deprecatedInclude("intellij.platform.extended.community.impl", "META-INF/community-extensions.xml", ultimateOnly = true)
 }

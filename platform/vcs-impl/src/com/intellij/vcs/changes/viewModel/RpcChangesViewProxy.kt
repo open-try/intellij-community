@@ -1,7 +1,7 @@
 // Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.vcs.changes.viewModel
 
-import com.intellij.openapi.actionSystem.AnAction
+import com.intellij.openapi.components.serviceAsync
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vcs.FilePath
 import com.intellij.openapi.vcs.changes.*
@@ -12,7 +12,6 @@ import com.intellij.platform.kernel.ids.storeValueGlobally
 import com.intellij.platform.vcs.impl.shared.rpc.BackendChangesViewEvent
 import com.intellij.platform.vcs.impl.shared.rpc.ChangesViewApi
 import com.intellij.ui.split.createComponent
-import com.intellij.vcs.commit.ChangesViewCommitWorkflowHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.*
@@ -54,16 +53,11 @@ internal class RpcChangesViewProxy(private val project: Project, scope: Coroutin
 
   override fun initPanel() {
     val id = storeValueGlobally(scope, Unit, BackendChangesViewValueIdType)
-    ChangesViewSplitComponentBinding.createComponent(project, scope, id)
-  }
-
-  override fun setCommitWorkflowHandler(handler: ChangesViewCommitWorkflowHandler?) {
+    _panel = ChangesViewSplitComponentBinding.createComponent(project, scope, id)
   }
 
   override fun setToolbarHorizontal(horizontal: Boolean) {
   }
-
-  override fun getActions(): List<AnAction> = emptyList()
 
   override fun isModelUpdateInProgress(): Boolean = false
 
@@ -156,5 +150,7 @@ private class BackendRemoteCommitChangesViewModelRefresher(
     lastAppliedRefresh.update { maxOf(it, counter) }
   }
 }
+
+internal suspend fun Project.getRpcChangesView() = (serviceAsync<ChangesViewI>() as ChangesViewManager).changesView as RpcChangesViewProxy
 
 private object BackendChangesViewValueIdType : BackendValueIdType<ChangesViewId, Unit>(::ChangesViewId)

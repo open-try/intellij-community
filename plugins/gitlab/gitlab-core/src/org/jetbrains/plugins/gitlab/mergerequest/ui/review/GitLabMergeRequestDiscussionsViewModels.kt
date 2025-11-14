@@ -22,6 +22,7 @@ import kotlinx.coroutines.launch
 import org.jetbrains.plugins.gitlab.api.dto.GitLabUserDTO
 import org.jetbrains.plugins.gitlab.mergerequest.data.*
 import org.jetbrains.plugins.gitlab.ui.comment.*
+import org.jetbrains.plugins.gitlab.ui.GitLabMarkdownToHtmlConverter
 import java.time.Instant.EPOCH
 import java.util.*
 
@@ -71,16 +72,19 @@ fun GitLabMergeRequestDiscussionsViewModels.NewDiscussionPosition.mapToLocation(
 internal class GitLabMergeRequestDiscussionsViewModelsImpl(
   private val project: Project,
   parentCs: CoroutineScope,
-  projectData: GitLabProject,
+  private val projectData: GitLabProject,
   private val currentUser: GitLabUserDTO,
-  private val mergeRequest: GitLabMergeRequest
+  private val mergeRequest: GitLabMergeRequest,
+  htmlConverter: GitLabMarkdownToHtmlConverter,
 ) : GitLabMergeRequestDiscussionsViewModels {
   private val cs = parentCs.childScope("GitLab Merge Request Review Discussions", Dispatchers.Default)
 
   override val discussions: DiscussionsFlow = mergeRequest.discussions
     .map { ComputedResult.fromResult(it) }
     .transformConsecutiveSuccesses {
-      mapStatefulToStateful { GitLabMergeRequestDiscussionViewModelBase(project, this, projectData, currentUser, it) }
+      mapStatefulToStateful {
+        GitLabMergeRequestDiscussionViewModelBase(project, this, projectData, currentUser, it, htmlConverter)
+      }
     }
     .stateInNow(cs, ComputedResult.loading())
 
@@ -88,8 +92,9 @@ internal class GitLabMergeRequestDiscussionsViewModelsImpl(
     .map { ComputedResult.fromResult(it) }
     .transformConsecutiveSuccesses {
       mapFiltered { it.discussionId == null }
-        .mapStatefulToStateful { GitLabMergeRequestStandaloneDraftNoteViewModelBase(project, this, it, mergeRequest,
-                                                                                    projectData.contextDataLoader) }
+        .mapStatefulToStateful {
+          GitLabMergeRequestStandaloneDraftNoteViewModelBase(project, this, it, mergeRequest, projectData, htmlConverter)
+        }
     }
     .stateInNow(cs, ComputedResult.loading())
 
@@ -144,7 +149,7 @@ internal class GitLabMergeRequestDiscussionsViewModelsImpl(
   override fun requestNewDiscussion(position: GitLabMergeRequestDiscussionsViewModels.NewDiscussionPosition, focus: Boolean) {
     _newDiscussions.updateAndGet { currentNewDiscussions ->
       if (!currentNewDiscussions.containsKey(position) && mergeRequest.canAddNotes) {
-        val vm = GitLabNoteEditingViewModel.forNewDiffNote(cs, project, mergeRequest, currentUser, position.position).apply {
+        val vm = GitLabNoteEditingViewModel.forNewDiffNote(cs, project, projectData, mergeRequest, currentUser, position.position).apply {
           onDoneIn(cs) {
             cancelNewDiscussion(position)
           }
@@ -239,7 +244,8 @@ internal class GitLabMergeRequestDiscussionsViewModelsImpl(
       val changeIndices = allChanges.changes.mapIndexed { idx, change -> change to idx }.toMap()
       val comparator = positionComparator(changeIndices::get)
 
-      return combine(allDiscussions.map { threadData ->
+      return if (allDiscussions.isEmpty()) flowOf(TreeSet())
+      else combine(allDiscussions.map { threadData ->
         threadData.position.mapState { position ->
           val commitOid = position?.sha ?: return@mapState null
           val change = allChanges.findCumulativeChange(commitOid, position.filePath) ?: return@mapState null

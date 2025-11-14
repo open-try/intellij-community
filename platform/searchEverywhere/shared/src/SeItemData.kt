@@ -22,6 +22,8 @@ class SeItemData private constructor(
   val additionalInfo: Map<String, String>,
   private val itemRef: DurableRef<SeItemEntity>,
 ) {
+  val isCommand: Boolean get() = additionalInfo[SeItemDataKeys.IS_COMMAND]?.toBoolean() == true
+  
   fun fetchItemIfExists(): SeItem? {
     return itemRef.derefOrNull()?.findItemOrNull()
   }
@@ -50,7 +52,7 @@ class SeItemData private constructor(
       val additionalInfo = additionalInfo.toMutableMap()
 
       if (item is SeLegacyItem) {
-        computeCatchingOrNull(true, { e-> "Couldn't add language info (${providerId.value}): $e" }) {
+        computeCatchingOrNull(true, { e -> "Couldn't add language info (${providerId.value}): $e" }) {
           PSIPresentationBgRendererWrapper.toPsi(item.rawObject)?.let {
             readAction {
               additionalInfo[SeItemDataKeys.PSI_LANGUAGE_ID] = it.language.id
@@ -58,7 +60,7 @@ class SeItemData private constructor(
           }
         }
 
-        computeCatchingOrNull(true, { e-> "Couldn't add isSemantic info (${providerId.value}): $e" }) {
+        computeCatchingOrNull(true, { e -> "Couldn't add isSemantic info (${providerId.value}): $e" }) {
           val element = (item.rawObject as? PSIPresentationBgRendererWrapper.ItemWithPresentation<*>)?.item
                         ?: item.rawObject
           val contributor = (item.contributor as? PSIPresentationBgRendererWrapper)?.delegate ?: item.contributor
@@ -69,5 +71,12 @@ class SeItemData private constructor(
 
       return SeItemData(uuid, providerId, weight, presentation, uuidToReplace, additionalInfo, entityRef)
     }
+  }
+
+  fun contentEquals(other: Any?): Boolean {
+    if (this === other) return true
+    if (other !is SeItemData) return false
+
+    return presentation.contentEquals(other.presentation)
   }
 }

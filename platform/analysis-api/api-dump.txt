@@ -1,15 +1,14 @@
 c:com.intellij.codeInsight.CharTailType
 - com.intellij.codeInsight.ModNavigatorTailType
 - processTail(com.intellij.openapi.project.Project,com.intellij.openapi.editor.ModNavigator,I):I
-a:com.intellij.codeInsight.ModNavigatorTailType
-- com.intellij.codeInsight.TailType
-- <init>():V
-- processTail(com.intellij.openapi.editor.Editor,I):I
-- a:processTail(com.intellij.openapi.project.Project,com.intellij.openapi.editor.ModNavigator,I):I
 a:com.intellij.codeInsight.TailType
 - s:insertChar(com.intellij.openapi.editor.ModNavigator,I,C):I
 - s:insertChar(com.intellij.openapi.editor.ModNavigator,I,C,Z):I
 - ps:moveCaret(com.intellij.openapi.editor.ModNavigator,I,I):I
+com.intellij.codeInsight.completion.BaseCompletionParameters
+- a:getOffset():I
+- a:getOriginalFile():com.intellij.psi.PsiFile
+- a:getPosition():com.intellij.psi.PsiElement
 com.intellij.codeInsight.completion.BatchConsumer
 - com.intellij.util.Consumer
 - endBatch():V
@@ -18,6 +17,7 @@ f:com.intellij.codeInsight.completion.CompletionConfidenceEP
 - com.intellij.lang.LanguageExtensionPoint
 - <init>():V
 f:com.intellij.codeInsight.completion.CompletionParameters
+- com.intellij.codeInsight.completion.BaseCompletionParameters
 - getCompletionType():com.intellij.codeInsight.completion.CompletionType
 - getEditor():com.intellij.openapi.editor.Editor
 - getInvocationCount():I
@@ -601,6 +601,8 @@ com.intellij.lang.documentation.ExternalDocumentationProvider
 com.intellij.lang.refactoring.NamesValidator
 - a:isIdentifier(java.lang.String,com.intellij.openapi.project.Project):Z
 - a:isKeyword(java.lang.String,com.intellij.openapi.project.Project):Z
+f:com.intellij.modcommand.ActionContext
+- withSelection(com.intellij.openapi.util.TextRange):com.intellij.modcommand.ActionContext
 com.intellij.modcommand.ModCommand
 - andThen(com.intellij.modcommand.ModCommand):com.intellij.modcommand.ModCommand
 - s:chooseAction(java.lang.String,java.util.List):com.intellij.modcommand.ModCommand
@@ -648,7 +650,7 @@ com.intellij.modcommand.ModCommandService
 - a:chooseFileAndPerform(com.intellij.psi.PsiFile,com.intellij.openapi.editor.Editor,com.intellij.modcommand.ModCommandAction,I):com.intellij.modcommand.ModCommandWithContext
 - s:getInstance():com.intellij.modcommand.ModCommandService
 - a:insertText(com.intellij.modcommand.ActionContext,java.lang.String,Z):com.intellij.modcommand.ModCommand
-- a:psiUpdate(com.intellij.modcommand.ActionContext,java.util.function.Consumer):com.intellij.modcommand.ModCommand
+- a:psiUpdate(com.intellij.modcommand.ActionContext,java.util.function.Consumer,java.util.function.Consumer):com.intellij.modcommand.ModCommand
 - a:unwrap(com.intellij.codeInspection.LocalQuickFix):com.intellij.modcommand.ModCommandAction
 - a:updateOption(com.intellij.psi.PsiElement,com.intellij.codeInspection.InspectionProfileEntry,java.util.function.Consumer):com.intellij.modcommand.ModCommand
 - a:wrap(com.intellij.modcommand.ModCommandAction):com.intellij.codeInsight.intention.IntentionAction
@@ -674,6 +676,16 @@ com.intellij.modcommand.ModPsiUpdater
 - a:select(com.intellij.psi.PsiElement):V
 - a:showConflicts(java.util.Map):V
 - a:templateBuilder():com.intellij.modcommand.ModTemplateBuilder
+f:com.intellij.modcommand.ModRegisterTabOut
+- java.lang.Record
+- com.intellij.modcommand.ModCommand
+- <init>(com.intellij.openapi.vfs.VirtualFile,I,I,I):V
+- f:equals(java.lang.Object):Z
+- file():com.intellij.openapi.vfs.VirtualFile
+- f:hashCode():I
+- rangeEnd():I
+- rangeStart():I
+- target():I
 com.intellij.modcommand.ModTemplateBuilder
 - a:field(com.intellij.psi.PsiElement,com.intellij.codeInsight.template.Expression):com.intellij.modcommand.ModTemplateBuilder
 - a:field(com.intellij.psi.PsiElement,com.intellij.openapi.util.TextRange,java.lang.String,com.intellij.codeInsight.template.Expression):com.intellij.modcommand.ModTemplateBuilder

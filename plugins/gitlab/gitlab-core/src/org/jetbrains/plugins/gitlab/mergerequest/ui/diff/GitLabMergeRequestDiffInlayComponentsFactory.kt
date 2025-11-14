@@ -3,7 +3,6 @@ package org.jetbrains.plugins.gitlab.mergerequest.ui.diff
 
 import com.intellij.collaboration.messages.CollaborationToolsBundle
 import com.intellij.collaboration.ui.codereview.CodeReviewChatItemUIUtil
-import com.intellij.collaboration.ui.codereview.comment.CodeReviewCommentTextFieldFactory
 import com.intellij.collaboration.ui.codereview.comment.CodeReviewCommentUIUtil
 import com.intellij.collaboration.ui.codereview.comment.CommentInputActionsComponentFactory
 import com.intellij.collaboration.ui.codereview.timeline.comment.CommentTextFieldFactory
@@ -18,7 +17,7 @@ import com.intellij.util.ui.launchOnShow
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import org.jetbrains.plugins.gitlab.api.dto.GitLabUserDTO
-import org.jetbrains.plugins.gitlab.mergerequest.ui.GitLabContextDataLoader
+import org.jetbrains.plugins.gitlab.data.GitLabImageLoader
 import org.jetbrains.plugins.gitlab.ui.comment.*
 import org.jetbrains.plugins.gitlab.util.GitLabBundle
 import org.jetbrains.plugins.gitlab.util.GitLabStatistics
@@ -33,11 +32,11 @@ internal object GitLabMergeRequestDiffInlayComponentsFactory {
     project: Project,
     cs: CoroutineScope,
     avatarIconsProvider: IconsProvider<GitLabUserDTO>,
-    contextDataLoader: GitLabContextDataLoader,
+    imageLoader: GitLabImageLoader,
     vm: GitLabMergeRequestDiscussionViewModel,
     place: GitLabStatistics.MergeRequestNoteActionPlace,
   ): JComponent =
-    GitLabDiscussionComponentFactory.create(project, cs, avatarIconsProvider, contextDataLoader, vm, place).apply {
+    GitLabDiscussionComponentFactory.create(project, cs, avatarIconsProvider, imageLoader, vm, place).apply {
       border = JBUI.Borders.empty(CodeReviewCommentUIUtil.getInlayPadding(CodeReviewChatItemUIUtil.ComponentType.COMPACT))
     }.apply {
       isFocusable = true
@@ -59,12 +58,12 @@ internal object GitLabMergeRequestDiffInlayComponentsFactory {
     project: Project,
     cs: CoroutineScope,
     avatarIconsProvider: IconsProvider<GitLabUserDTO>,
-    contextDataLoader: GitLabContextDataLoader,
+    imageLoader: GitLabImageLoader,
     vm: GitLabNoteViewModel,
     place: GitLabStatistics.MergeRequestNoteActionPlace,
   ): JComponent =
     GitLabNoteComponentFactory.create(CodeReviewChatItemUIUtil.ComponentType.COMPACT, project, cs, avatarIconsProvider,
-                                      contextDataLoader, vm, place).apply {
+                                      imageLoader, vm, place).apply {
       border = JBUI.Borders.empty(CodeReviewCommentUIUtil.getInlayPadding(CodeReviewChatItemUIUtil.ComponentType.COMPACT))
     }.apply {
       isFocusable = true
@@ -104,6 +103,7 @@ internal object GitLabMergeRequestDiffInlayComponentsFactory {
         onCancel()
       }
     }
+
     val actions = CommentInputActionsComponentFactory.Config(
       primaryAction = vm.primarySubmitActionIn(cs, addAction, addAsDraftAction),
       secondaryActions = vm.secondarySubmitActionIn(cs, addAction, addAsDraftAction),
@@ -118,7 +118,7 @@ internal object GitLabMergeRequestDiffInlayComponentsFactory {
     val itemType = CodeReviewChatItemUIUtil.ComponentType.COMPACT
     val icon = CommentTextFieldFactory.IconConfig.of(itemType, avatarIconsProvider, vm.currentUser)
 
-    val editor = CodeReviewCommentTextFieldFactory.createIn(cs, vm, actions, icon).apply {
+    val editor = GitLabCodeReviewCommentTextFieldFactory.createIn(cs, vm, actions, icon).apply {
       border = JBUI.Borders.empty(itemType.inputPaddingInsets)
     }
 

@@ -29,6 +29,7 @@ import org.jetbrains.intellij.build.impl.productInfo.resolveProductInfoJsonSibli
 import org.jetbrains.intellij.build.impl.productInfo.validateProductJson
 import org.jetbrains.intellij.build.impl.productInfo.writeProductInfoJson
 import org.jetbrains.intellij.build.impl.qodana.generateQodanaLaunchData
+import org.jetbrains.intellij.build.impl.stdioMcpRunner.generateStdioMcpRunnerLaunchData
 import org.jetbrains.intellij.build.impl.support.RepairUtilityBuilder
 import org.jetbrains.intellij.build.io.copyFile
 import org.jetbrains.intellij.build.io.copyFileToDir
@@ -48,18 +49,16 @@ import kotlin.io.path.readText
 import kotlin.time.Duration.Companion.minutes
 
 private const val EXECUTABLE_TEMPLATE_NAME = "executable-template.sh"
+private const val NO_RUNTIME_SUFFIX = "-no-jbr"
 
 private val BuildSnapSemaphore = Semaphore(Integer.getInteger("intellij.build.unix.snaps.concurrency", 1))
 
 class LinuxDistributionBuilder(
-  override val context: BuildContext,
   private val customizer: LinuxDistributionCustomizer,
   private val ideaProperties: CharSequence?,
   override val targetLibcImpl: LinuxLibcImpl,
+  override val context: BuildContext,
 ) : OsSpecificDistributionBuilder {
-  companion object {
-    private const val NO_RUNTIME_SUFFIX = "-no-jbr"
-  }
   private val iconPngPath: Path?
 
   init {
@@ -75,11 +74,11 @@ class LinuxDistributionBuilder(
       withContext(Dispatchers.IO) {
         val distBinDir = targetPath.resolve("bin")
         val sourceBinDir = context.paths.communityHomeDir.resolve("bin/linux")
-        addNativeLauncher(distBinDir = distBinDir, targetPath = targetPath, arch = arch, context = context)
+        addNativeLauncher(distBinDir, targetPath, arch, context)
         copyFileToDir(NativeBinaryDownloader.getRestarter(context, OsFamily.LINUX, arch), distBinDir)
         copyFileToDir(sourceBinDir.resolve("${arch.dirName}/fsnotifier"), distBinDir)
-        generateBuildTxt(context = context, targetDirectory = targetPath)
-        copyDistFiles(context = context, newDir = targetPath, os = OsFamily.LINUX, arch = arch, libcImpl = targetLibcImpl)
+        generateBuildTxt(context, targetPath)
+        copyDistFiles(context, targetPath, OsFamily.LINUX, arch, targetLibcImpl)
 
         //todo converting line separators to unix-style make sense only when building Linux distributions under Windows on a local machine;
         // for real installers we need to checkout all text files with 'lf' separators anyway
@@ -89,20 +88,16 @@ class LinuxDistributionBuilder(
           Files.copy(iconPngPath, distBinDir.resolve("${context.productProperties.baseFileName}.png"), StandardCopyOption.REPLACE_EXISTING)
         }
         writeVmOptions(distBinDir)
-        generateScripts(distBinDir = distBinDir, arch = arch, targetLibcImpl = targetLibcImpl, context = context)
+        generateScripts(distBinDir, arch, targetLibcImpl, context)
         createFrontendContextForLaunchers(context)?.let { clientContext ->
           writeLinuxVmOptions(distBinDir, clientContext)
           generateLauncherScript(
-            distBinDir = distBinDir,
-            arch = arch,
-            nonCustomizableJvmArgs = ADDITIONAL_EMBEDDED_CLIENT_VM_OPTIONS,
-            context = clientContext,
-            targetLibcImpl = targetLibcImpl
+            distBinDir, arch, ADDITIONAL_EMBEDDED_CLIENT_VM_OPTIONS, targetLibcImpl, clientContext
           )
         }
         generateReadme(targetPath)
         generateVersionMarker(targetPath, context)
-        customizer.copyAdditionalFiles(context, targetPath, arch)
+        customizer.copyAdditionalFiles(targetPath, arch, context)
       }
     }
   }
@@ -127,7 +122,7 @@ class LinuxDistributionBuilder(
               span.addEvent("skip")
             }
             else {
-              buildTarGz(arch, runtimeDir = null, osAndArchSpecificDistPath, NO_RUNTIME_SUFFIX + suffix(arch, targetLibcImpl))
+              buildTarGz(arch = arch, runtimeDir = null, unixDistPath = osAndArchSpecificDistPath, suffix = NO_RUNTIME_SUFFIX + suffix(arch, targetLibcImpl))
             }
           }
         }
@@ -143,12 +138,12 @@ class LinuxDistributionBuilder(
         "linux_tar_gz_${arch.name}"
       ) { _ ->
         val suffix = suffix(arch, targetLibcImpl)
-        buildTarGz(arch, runtimeDir, osAndArchSpecificDistPath, suffix)
+        buildTarGz(arch = arch, runtimeDir = runtimeDir, unixDistPath = osAndArchSpecificDistPath, suffix = suffix)
       }
 
       if (targetLibcImpl != LinuxLibcImpl.MUSL) {
         launch(Dispatchers.IO + CoroutineName("build Snap package")) {
-          buildSnapPackage(runtimeDir, osAndArchSpecificDistPath, arch, targetLibcImpl)
+          buildSnapPackage(runtimeDir = runtimeDir, unixDistPath = osAndArchSpecificDistPath, arch = arch, targetLibcImpl = targetLibcImpl)
         }
       }
 
@@ -186,7 +181,7 @@ class LinuxDistributionBuilder(
   }
 
   override fun generateExecutableFilesPatterns(includeRuntime: Boolean, arch: JvmArchitecture, libc: LibcImpl): Sequence<String> {
-    return customizer.generateExecutableFilesPatterns(context, includeRuntime, arch, libc)
+    return customizer.generateExecutableFilesPatterns(includeRuntime = includeRuntime, arch = arch, targetLibcImpl = libc, context = context)
   }
 
   private val rootDirectoryName: String
@@ -209,7 +204,7 @@ class LinuxDistributionBuilder(
     }
 
     val productJsonDir = context.paths.tempDir.resolve("linux.dist.product-info.json${suffix}")
-    val productJsonFile = writeProductJsonFile(productJsonDir, arch, withRuntime = runtimeDir != null)
+    val productJsonFile = writeProductJsonFile(targetDir = productJsonDir, arch = arch, withRuntime = runtimeDir != null)
     dirs.add(productJsonDir)
 
     spanBuilder("build Linux tar.gz")
@@ -223,7 +218,13 @@ class LinuxDistributionBuilder(
         context.notifyArtifactBuilt(tarProductInfoJsonPath)
 
         context.notifyArtifactBuilt(tarPath)
-        checkExecutablePermissions(tarPath, rootDirectoryName, includeRuntime = runtimeDir != null, arch, this@LinuxDistributionBuilder.targetLibcImpl)
+        checkExecutablePermissions(
+          distribution = tarPath,
+          root = rootDirectoryName,
+          includeRuntime = runtimeDir != null,
+          arch = arch,
+          libc = this@LinuxDistributionBuilder.targetLibcImpl,
+        )
       }
     tarPath
   }
@@ -234,14 +235,7 @@ class LinuxDistributionBuilder(
     "${appInfo.majorVersion}.${appInfo.minorVersion}${if (versionSuffix.isEmpty()) "" else "-${versionSuffix}"}"
   }
 
-  private fun getSnapArchName(arch: JvmArchitecture) = when (arch) {
-    JvmArchitecture.x64 -> "amd64"
-    JvmArchitecture.aarch64 -> "arm64"
-  }
-
-  private fun getSnapArtifactName(snapName: String, arch: JvmArchitecture): String {
-    return "${snapName}_${snapVersion}_${getSnapArchName(arch)}.snap"
-  }
+  private fun getSnapArtifactName(snapName: String, arch: JvmArchitecture): String = "${snapName}_${snapVersion}_${getSnapArchName(arch)}.snap"
 
   private suspend fun buildSnapPackage(runtimeDir: Path, unixDistPath: Path, arch: JvmArchitecture, targetLibcImpl: LinuxLibcImpl) {
     if (!context.options.buildUnixSnaps) {
@@ -253,7 +247,7 @@ class LinuxDistributionBuilder(
     }
     buildSnapPackage(snapName, runtimeDir, unixDistPath, arch, targetLibcImpl)
     customizer.snapLegacyAliases.forEach {
-      buildSnapPackage(it, runtimeDir, unixDistPath, arch, targetLibcImpl)
+      buildSnapPackage(snapName = it, runtimeDir = runtimeDir, unixDistPath = unixDistPath, arch = arch, targetLibcImpl = targetLibcImpl)
     }
   }
 
@@ -288,9 +282,7 @@ class LinuxDistributionBuilder(
           )
         )
         copyFile(iconPngPath, snapDir.resolve("$snapName.png"))
-        val snapcraftTemplate = context.paths.communityHomeDir.resolve(
-          "platform/build-scripts/resources/linux/snap/snapcraft-template.yaml"
-        )
+        val snapcraftTemplate = context.paths.communityHomeDir.resolve("platform/build-scripts/resources/linux/snap/snapcraft-template.yaml")
         val snapcraftConfig = snapDir.resolve("snapcraft.yaml")
         substituteTemplatePlaceholders(
           inputFile = snapcraftTemplate,
@@ -315,7 +307,7 @@ class LinuxDistributionBuilder(
         val productJsonDir = context.paths.tempDir.resolve("linux.dist.snap.$snapName.product-info.json.$architecture")
         val productJsonFile = writeProductJsonFile(productJsonDir, arch)
         val installationDirectories = listOf(context.paths.distAllDir, unixDistPath, runtimeDir)
-        validateProductJson(jsonText = productJsonFile.readText(), installationDirectories, installationArchives = emptyList(), context)
+        validateProductJson(jsonText = productJsonFile.readText(), installationDirectories = installationDirectories, installationArchives = emptyList(), context = context)
         val resultDir = snapDir.resolve("result")
         Files.createDirectories(resultDir)
 
@@ -333,7 +325,7 @@ class LinuxDistributionBuilder(
             "--volume=$runtimeDir:/build/jre:ro",
             "--workdir=/build",
             context.options.snapDockerImage,
-            "snapcraft",
+            @Suppress("SpellCheckingInspection") "snapcraft",
             "snap",
             "--build-for=$architecture",
             "-o", "result/$snapArtifactName"
@@ -371,6 +363,7 @@ class LinuxDistributionBuilder(
       "bin/${it.productProperties.baseFileName}64.vmoptions"
     }
     val qodanaCustomLaunchData = generateQodanaLaunchData(context, arch, OsFamily.LINUX)
+    val stdioMcpRunnerLaunchData = generateStdioMcpRunnerLaunchData(context)
     val json = generateProductInfoJson(
       relativePathToBin = "bin",
       builtinModules = context.builtinModule,
@@ -385,7 +378,7 @@ class LinuxDistributionBuilder(
           additionalJvmArguments = context.getAdditionalJvmArguments(OsFamily.LINUX, arch),
           mainClass = context.ideMainClassName,
           startupWmClass = getLinuxFrameClass(context),
-          customCommands = listOfNotNull(embeddedFrontendLaunchData, qodanaCustomLaunchData)
+          customCommands = listOfNotNull(embeddedFrontendLaunchData, qodanaCustomLaunchData, stdioMcpRunnerLaunchData)
         )
       ),
       context
@@ -399,9 +392,8 @@ class LinuxDistributionBuilder(
 private fun generateVersionMarker(unixDistPath: Path, context: BuildContext) {
   val targetDir = unixDistPath.resolve("lib")
   Files.createDirectories(targetDir)
-  Files.writeString(targetDir.resolve("build-marker-" + context.fullBuildNumber), context.fullBuildNumber)
+  Files.writeString(targetDir.resolve("build-marker-${context.fullBuildNumber}"), context.fullBuildNumber)
 }
-
 
 private fun generateScripts(distBinDir: Path, arch: JvmArchitecture, targetLibcImpl: LinuxLibcImpl, context: BuildContext) {
   Files.createDirectories(distBinDir)
@@ -411,14 +403,14 @@ private fun generateScripts(distBinDir: Path, arch: JvmArchitecture, targetLibcI
     for (file in it) {
       val fileName = file.fileName.toString()
       if (fileName != EXECUTABLE_TEMPLATE_NAME) {
-        copyScript(file, distBinDir.resolve(fileName), additionalTemplateValues = emptyList(), context)
+        copyScript(sourceFile = file, targetFile = distBinDir.resolve(fileName), additionalTemplateValues = emptyList(), context = context)
       }
     }
   }
 
   copyInspectScript(context, distBinDir)
 
-  generateLauncherScript(distBinDir, arch, nonCustomizableJvmArgs = emptyList(), context, targetLibcImpl)
+  generateLauncherScript(distBinDir = distBinDir, arch = arch, nonCustomizableJvmArgs = emptyList(), targetLibcImpl = targetLibcImpl, context = context)
 }
 
 private suspend fun addNativeLauncher(distBinDir: Path, targetPath: Path, arch: JvmArchitecture, context: BuildContext) {
@@ -427,7 +419,7 @@ private suspend fun addNativeLauncher(distBinDir: Path, targetPath: Path, arch: 
   copyFile(licensePath, targetPath.resolve("license/launcher-third-party-libraries.html"))
 }
 
-private fun generateLauncherScript(distBinDir: Path, arch: JvmArchitecture, nonCustomizableJvmArgs: List<String>, context: BuildContext, targetLibcImpl: LinuxLibcImpl) {
+private fun generateLauncherScript(distBinDir: Path, arch: JvmArchitecture, nonCustomizableJvmArgs: List<String>, targetLibcImpl: LinuxLibcImpl, context: BuildContext) {
   val vmOptionsPath = distBinDir.resolve("${context.productProperties.baseFileName}64.vmoptions")
 
   val defaultXmxParameter = try {
@@ -450,7 +442,7 @@ private fun generateLauncherScript(distBinDir: Path, arch: JvmArchitecture, nonC
   if (targetLibcImpl == LinuxLibcImpl.MUSL) {
     additionalJvmArguments.add("-Djdk.lang.Process.launchMechanism=vfork")
   }
-  additionalJvmArguments.addAll(context.getAdditionalJvmArguments(OsFamily.LINUX, arch, isScript = true) + nonCustomizableJvmArgs)
+  additionalJvmArguments.addAll(context.getAdditionalJvmArguments(os = OsFamily.LINUX, arch = arch, isScript = true) + nonCustomizableJvmArgs)
 
   val additionalTemplateValues = listOf(
     Pair("vm_options", context.productProperties.baseFileName),
@@ -462,7 +454,12 @@ private fun generateLauncherScript(distBinDir: Path, arch: JvmArchitecture, nonC
   )
 
   val template = context.paths.communityHomeDir.resolve("platform/build-scripts/resources/linux/scripts/${EXECUTABLE_TEMPLATE_NAME}")
-  copyScript(template, distBinDir.resolve("${context.productProperties.baseFileName}.sh"), additionalTemplateValues, context)
+  copyScript(
+    sourceFile = template,
+    targetFile = distBinDir.resolve("${context.productProperties.baseFileName}.sh"),
+    additionalTemplateValues = additionalTemplateValues,
+    context = context,
+  )
 }
 
 private fun copyScript(sourceFile: Path, targetFile: Path, additionalTemplateValues: List<Pair<String, String>>, context: BuildContext) {
@@ -486,12 +483,16 @@ private fun copyScript(sourceFile: Path, targetFile: Path, additionalTemplateVal
 
 private fun writeLinuxVmOptions(distBinDir: Path, context: BuildContext): Path {
   val vmOptionsPath = distBinDir.resolve("${context.productProperties.baseFileName}64.vmoptions")
-  val vmOptions = VmOptionsGenerator.generate(context).asSequence() + sequenceOf("-Dsun.tools.attach.tmp.only=true", "-Dawt.lock.fair=true")
+  val vmOptions = generateVmOptions(context).asSequence() + sequenceOf("-Dsun.tools.attach.tmp.only=true", "-Dawt.lock.fair=true")
   writeVmOptions(file = vmOptionsPath, vmOptions = vmOptions, separator = "\n")
   return vmOptionsPath
 }
 
-
 private fun suffix(arch: JvmArchitecture, targetLibcImpl: LinuxLibcImpl): String {
   return suffix(arch) + if (targetLibcImpl == LinuxLibcImpl.MUSL) "-musl" else ""
+}
+
+private fun getSnapArchName(arch: JvmArchitecture) = when (arch) {
+  JvmArchitecture.x64 -> "amd64"
+  JvmArchitecture.aarch64 -> "arm64"
 }

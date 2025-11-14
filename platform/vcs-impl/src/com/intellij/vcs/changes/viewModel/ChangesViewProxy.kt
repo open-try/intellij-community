@@ -2,7 +2,6 @@
 package com.intellij.vcs.changes.viewModel
 
 import com.intellij.openapi.Disposable
-import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vcs.FilePath
 import com.intellij.openapi.vcs.changes.*
@@ -10,7 +9,6 @@ import com.intellij.openapi.vcs.changes.ui.ChangesListView
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.platform.util.coroutines.childScope
 import com.intellij.platform.vcs.impl.shared.RdLocalChanges
-import com.intellij.vcs.commit.ChangesViewCommitWorkflowHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.SharedFlow
@@ -34,10 +32,7 @@ internal abstract class ChangesViewProxy(protected val scope: CoroutineScope) : 
 
   abstract fun initPanel()
 
-  abstract fun setCommitWorkflowHandler(handler: ChangesViewCommitWorkflowHandler?)
-
   abstract fun setToolbarHorizontal(horizontal: Boolean)
-  abstract fun getActions(): List<AnAction>
   abstract fun isModelUpdateInProgress(): Boolean
 
   abstract fun scheduleRefreshNow(callback: Runnable?)
@@ -78,7 +73,7 @@ internal abstract class ChangesViewProxy(protected val scope: CoroutineScope) : 
       val scope = parentScope.childScope("ChangesViewProxy")
       val model =
         if (RdLocalChanges.isEnabled()) RpcChangesViewProxy(project, scope)
-        else LocalChangesViewProxy(CommitChangesViewWithToolbarPanel(LocalChangesListView(project), scope), scope)
+        else LocalChangesViewProxy(BackendCommitChangesViewWithToolbarPanel(LocalChangesListView(project), scope), scope)
 
       return model
     }

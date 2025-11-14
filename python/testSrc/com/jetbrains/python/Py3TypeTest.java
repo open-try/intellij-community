@@ -2056,7 +2056,7 @@ public class Py3TypeTest extends PyTestCase {
 
   // PY-51329
   public void testBitwiseOrOperatorOverloadUnion() {
-    doTest("UnionType",
+    doTest("UnionType | Self",
            """
              class MyMeta(type):
                  def __or__(self, other):
@@ -4145,6 +4145,17 @@ public class Py3TypeTest extends PyTestCase {
       
       expr = f()
       """);
+  }
+  
+  // PY-81684
+  public void testFunctionAlwaysRaisesReturnsNever() {
+    // The function actually returns NoReturn, but its get converted to Never upon assignment to expr
+    doTest("Never", """
+      def f():
+          raise Exception()
+    
+      expr = f()
+    """);
   }
 
   // PY-85078

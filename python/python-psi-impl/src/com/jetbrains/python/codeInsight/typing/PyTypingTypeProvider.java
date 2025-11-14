@@ -54,7 +54,6 @@ import org.jetbrains.annotations.Nullable;
 import java.util.*;
 import java.util.function.Function;
 import java.util.regex.Pattern;
-import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static com.dynatrace.hash4j.hashing.Hashing.xxh3_128;
@@ -861,6 +860,11 @@ public final class PyTypingTypeProvider extends PyTypeProviderWithCustomContext<
       }
       context.addTypeAlias(alias);
     }
+    if (resolved instanceof PyClass pyClass && !context.addClassDeclaration(pyClass)) {
+      // Resolving to normal classes shouldn't cause recursive evaluation of type hints,
+      // but constructing recursive PyTypedDictTypes will trigger that.
+      return null;
+    }
     try {
       final Ref<PyType> typeHintFromProvider = PyTypeHintProvider.Companion.parseTypeHint(
         typeHint,
@@ -994,6 +998,9 @@ public final class PyTypingTypeProvider extends PyTypeProviderWithCustomContext<
       return null;
     }
     finally {
+      if (resolved instanceof PyClass pyClass) {
+        context.removeClassDeclaration(pyClass);
+      }
       if (alias != null) {
         context.removeTypeAlias(alias);
       }
@@ -1140,8 +1147,9 @@ public final class PyTypingTypeProvider extends PyTypeProviderWithCustomContext<
         var class_ = PyPsiFacade.getInstance(element.getProject()).createClassByQName(element.getText(), element);
         type = class_ != null ? class_.getType(typeContext) : null;
       }
-      else
+      else {
         type = typeContext.getType((PyTypedElement)element);
+      }
       if (type instanceof PyClassLikeType classLikeType) {
         if (classLikeType.isDefinition()) {
           // If we're interpreting a type hint like "MyGeneric" that is not followed by a list of type arguments (e.g. MyGeneric[int]),
@@ -2338,7 +2346,9 @@ public final class PyTypingTypeProvider extends PyTypeProviderWithCustomContext<
     return staticWithCustomContext(context, false, delegate);
   }
 
-  private static <T> T staticWithCustomContext(@NotNull TypeEvalContext context, boolean useFqn, @NotNull Function<@NotNull Context, T> delegate) {
+  private static <T> T staticWithCustomContext(@NotNull TypeEvalContext context,
+                                               boolean useFqn,
+                                               @NotNull Function<@NotNull Context, T> delegate) {
     Context customContext = context.getProcessingContext().get(TYPE_HINT_EVAL_CONTEXT);
     boolean firstEntrance = customContext == null;
     if (firstEntrance) {
@@ -2359,6 +2369,7 @@ public final class PyTypingTypeProvider extends PyTypeProviderWithCustomContext<
   public static final class Context {
     private final @NotNull TypeEvalContext myContext;
     private final @NotNull Stack<PyQualifiedNameOwner> myTypeAliasStack = new Stack<>();
+    private final @NotNull Set<PyClass> myClassSet = new HashSet<>();
     private boolean myComputeTypeParameterScope = true;
     private final boolean myUseFqn;
 
@@ -2416,6 +2427,14 @@ public final class PyTypingTypeProvider extends PyTypeProviderWithCustomContext<
       return res;
     }
 
+    public boolean addClassDeclaration(@NotNull PyClass pyClass) {
+      return myClassSet.add(pyClass);
+    }
+
+    public void removeClassDeclaration(@NotNull PyClass pyClass) {
+      myClassSet.remove(pyClass);
+    }
+
     public boolean isComputeTypeParameterScopeEnabled() {
       return myComputeTypeParameterScope;
     }
@@ -2439,9 +2458,12 @@ public final class PyTypingTypeProvider extends PyTypeProviderWithCustomContext<
     private @NotNull HashValue128 myContextStrongHashValue;
 
     private void recomputeStrongHashValue() {
-      myContextStrongHashValue = xxh3_128().hashCharsTo128Bits(Stream.concat(Stream.of(myComputeTypeParameterScope ? "1" : "0"),
-                                                    myTypeAliasStack.stream().map(it -> it.getQualifiedName()))
-                                                   .collect(Collectors.joining("#")));
+      myContextStrongHashValue = xxh3_128().hashCharsTo128Bits(
+        StreamEx.of(myComputeTypeParameterScope ? "1" : "0")
+          .append(myTypeAliasStack.stream().map(it -> it.getQualifiedName()))
+          .append(myClassSet.stream().map(it -> it.getQualifiedName()))
+          .joining("#")
+      );
     }
 
     private @NotNull HashValue128 getContextStrongHashValue() {

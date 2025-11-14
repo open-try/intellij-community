@@ -264,6 +264,11 @@ internal class IslandsUICustomization : InternalUICustomization() {
 
       val background = EditorColorsManager.getInstance().globalScheme.defaultBackground
 
+      if (getMainBackgroundColor() == background) {
+        val hsb = Color.RGBtoHSB(background.red, background.green, background.blue, null)
+        uiDefaults["MainWindow.background"] = Color.getHSBColor(hsb[0], hsb[1], (hsb[2] + .03f).coerceAtMost(1f))
+      }
+
       uiDefaults["ToolWindow.background"] = background
       uiDefaults["ToolWindow.Header.background"] = background
       uiDefaults["ToolWindow.Header.inactiveBackground"] = background
@@ -712,12 +717,7 @@ internal class IslandsUICustomization : InternalUICustomization() {
           paintBeforeEditorEmptyText(component, frameBG, editorTabPainterAdapter)
 
           val editorEmptyTextPainter = ApplicationManager.getApplication().getService(EditorEmptyTextPainter::class.java)
-          val glassPane = IdeGlassPaneUtil.find(component) as JComponent
-          val shift = SwingUtilities.convertPoint(component, 0, 0, glassPane)
-
-          frameBG.translate(-shift.x, -shift.y)
-          editorEmptyTextPainter.doPaintEmptyText(glassPane, frameBG)
-          frameBG.translate(shift.x, shift.y)
+          editorEmptyTextPainter.doPaintEmptyText(component, frameBG)
         }
 
         paintIslandBorder(component, editorBG, true)

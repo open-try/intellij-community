@@ -4354,6 +4354,115 @@ public abstract class K2LocalInspectionTestGenerated extends AbstractK2LocalInsp
     }
 
     @RunWith(JUnit3RunnerWithInners.class)
+    @TestMetadata("../../../idea/tests/testData/inspectionsLocal/arrayToString")
+    public static class ArrayToString extends AbstractK2LocalInspectionTest {
+        @java.lang.Override
+        @org.jetbrains.annotations.NotNull
+        public final KotlinPluginMode getPluginMode() {
+            return KotlinPluginMode.K2;
+        }
+
+        private void runTest(String testDataFilePath) throws Exception {
+            KotlinTestUtils.runTest(this::doTest, this, testDataFilePath);
+        }
+
+        @TestMetadata("genericTypeArray.kt")
+        public void testGenericTypeArray() throws Exception {
+            runTest("../../../idea/tests/testData/inspectionsLocal/arrayToString/genericTypeArray.kt");
+        }
+
+        @TestMetadata("implicitNestedArrayConcatenation.kt")
+        public void testImplicitNestedArrayConcatenation() throws Exception {
+            runTest("../../../idea/tests/testData/inspectionsLocal/arrayToString/implicitNestedArrayConcatenation.kt");
+        }
+
+        @TestMetadata("implicitStringConcatenation.kt")
+        public void testImplicitStringConcatenation() throws Exception {
+            runTest("../../../idea/tests/testData/inspectionsLocal/arrayToString/implicitStringConcatenation.kt");
+        }
+
+        @TestMetadata("intArray.kt")
+        public void testIntArray() throws Exception {
+            runTest("../../../idea/tests/testData/inspectionsLocal/arrayToString/intArray.kt");
+        }
+
+        @TestMetadata("multidimensionalArrayContentDeepToString.kt")
+        public void testMultidimensionalArrayContentDeepToString() throws Exception {
+            runTest("../../../idea/tests/testData/inspectionsLocal/arrayToString/multidimensionalArrayContentDeepToString.kt");
+        }
+
+        @TestMetadata("multidimensionalArrayContentToString.kt")
+        public void testMultidimensionalArrayContentToString() throws Exception {
+            runTest("../../../idea/tests/testData/inspectionsLocal/arrayToString/multidimensionalArrayContentToString.kt");
+        }
+
+        @TestMetadata("noInspection.kt")
+        public void testNoInspection() throws Exception {
+            runTest("../../../idea/tests/testData/inspectionsLocal/arrayToString/noInspection.kt");
+        }
+
+        @TestMetadata("nullableArray.kt")
+        public void testNullableArray() throws Exception {
+            runTest("../../../idea/tests/testData/inspectionsLocal/arrayToString/nullableArray.kt");
+        }
+
+        @TestMetadata("printArray.kt")
+        public void testPrintArray() throws Exception {
+            runTest("../../../idea/tests/testData/inspectionsLocal/arrayToString/printArray.kt");
+        }
+
+        @TestMetadata("printlnArray.kt")
+        public void testPrintlnArray() throws Exception {
+            runTest("../../../idea/tests/testData/inspectionsLocal/arrayToString/printlnArray.kt");
+        }
+
+        @TestMetadata("printlnNestedArray.kt")
+        public void testPrintlnNestedArray() throws Exception {
+            runTest("../../../idea/tests/testData/inspectionsLocal/arrayToString/printlnNestedArray.kt");
+        }
+
+        @TestMetadata("simpleArray.kt")
+        public void testSimpleArray() throws Exception {
+            runTest("../../../idea/tests/testData/inspectionsLocal/arrayToString/simpleArray.kt");
+        }
+
+        @TestMetadata("stringBufferAppend.kt")
+        public void testStringBufferAppend() throws Exception {
+            runTest("../../../idea/tests/testData/inspectionsLocal/arrayToString/stringBufferAppend.kt");
+        }
+
+        @TestMetadata("stringBuilderAppend.kt")
+        public void testStringBuilderAppend() throws Exception {
+            runTest("../../../idea/tests/testData/inspectionsLocal/arrayToString/stringBuilderAppend.kt");
+        }
+
+        @TestMetadata("stringBuilderAppendNestedArray.kt")
+        public void testStringBuilderAppendNestedArray() throws Exception {
+            runTest("../../../idea/tests/testData/inspectionsLocal/arrayToString/stringBuilderAppendNestedArray.kt");
+        }
+
+        @TestMetadata("stringTemplate.kt")
+        public void testStringTemplate() throws Exception {
+            runTest("../../../idea/tests/testData/inspectionsLocal/arrayToString/stringTemplate.kt");
+        }
+
+        @TestMetadata("stringTemplateNestedArray.kt")
+        public void testStringTemplateNestedArray() throws Exception {
+            runTest("../../../idea/tests/testData/inspectionsLocal/arrayToString/stringTemplateNestedArray.kt");
+        }
+
+        @TestMetadata("stringTemplateSimpleName.kt")
+        public void testStringTemplateSimpleName() throws Exception {
+            runTest("../../../idea/tests/testData/inspectionsLocal/arrayToString/stringTemplateSimpleName.kt");
+        }
+
+        @TestMetadata("varargParameter.kt")
+        public void testVarargParameter() throws Exception {
+            runTest("../../../idea/tests/testData/inspectionsLocal/arrayToString/varargParameter.kt");
+        }
+    }
+
+    @RunWith(JUnit3RunnerWithInners.class)
     @TestMetadata("../../../idea/tests/testData/inspectionsLocal/stringReferentialEquality")
     public static class StringReferentialEquality extends AbstractK2LocalInspectionTest {
         @java.lang.Override
@@ -9330,6 +9439,16 @@ public abstract class K2LocalInspectionTestGenerated extends AbstractK2LocalInsp
             runTest("../../../idea/tests/testData/inspectionsLocal/replaceManualRangeWithIndicesCalls/indexInLvalue.kt");
         }
 
+        @TestMetadata("lengthLiteralConstant.kt")
+        public void testLengthLiteralConstant() throws Exception {
+            runTest("../../../idea/tests/testData/inspectionsLocal/replaceManualRangeWithIndicesCalls/lengthLiteralConstant.kt");
+        }
+
+        @TestMetadata("lengthVariable.kt")
+        public void testLengthVariable() throws Exception {
+            runTest("../../../idea/tests/testData/inspectionsLocal/replaceManualRangeWithIndicesCalls/lengthVariable.kt");
+        }
+
         @TestMetadata("map.kt")
         public void testMap() throws Exception {
             runTest("../../../idea/tests/testData/inspectionsLocal/replaceManualRangeWithIndicesCalls/map.kt");
@@ -9383,6 +9502,21 @@ public abstract class K2LocalInspectionTestGenerated extends AbstractK2LocalInsp
         @TestMetadata("simpleFor.kt")
         public void testSimpleFor() throws Exception {
             runTest("../../../idea/tests/testData/inspectionsLocal/replaceManualRangeWithIndicesCalls/simpleFor.kt");
+        }
+
+        @TestMetadata("sizeLabeled.kt")
+        public void testSizeLabeled() throws Exception {
+            runTest("../../../idea/tests/testData/inspectionsLocal/replaceManualRangeWithIndicesCalls/sizeLabeled.kt");
+        }
+
+        @TestMetadata("sizeLiteralConstant.kt")
+        public void testSizeLiteralConstant() throws Exception {
+            runTest("../../../idea/tests/testData/inspectionsLocal/replaceManualRangeWithIndicesCalls/sizeLiteralConstant.kt");
+        }
+
+        @TestMetadata("sizeVariable.kt")
+        public void testSizeVariable() throws Exception {
+            runTest("../../../idea/tests/testData/inspectionsLocal/replaceManualRangeWithIndicesCalls/sizeVariable.kt");
         }
 
         @TestMetadata("thisReceiver.kt")

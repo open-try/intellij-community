@@ -13,7 +13,6 @@ import com.intellij.collaboration.ui.VerticalListPanel
 import com.intellij.collaboration.ui.codereview.CodeReviewChatItemUIUtil
 import com.intellij.collaboration.ui.codereview.CodeReviewChatItemUIUtil.ComponentType
 import com.intellij.collaboration.ui.codereview.CodeReviewTimelineUIUtil
-import com.intellij.collaboration.ui.codereview.comment.CodeReviewCommentTextFieldFactory
 import com.intellij.collaboration.ui.codereview.comment.CodeReviewCommentUIUtil
 import com.intellij.collaboration.ui.codereview.comment.CommentInputActionsComponentFactory
 import com.intellij.collaboration.ui.codereview.timeline.comment.CommentTextFieldFactory
@@ -32,7 +31,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import org.jetbrains.plugins.gitlab.api.dto.GitLabUserDTO
-import org.jetbrains.plugins.gitlab.mergerequest.ui.GitLabContextDataLoader
+import org.jetbrains.plugins.gitlab.data.GitLabImageLoader
 import org.jetbrains.plugins.gitlab.ui.comment.GitLabMergeRequestDiscussionViewModel.NoteItem
 import org.jetbrains.plugins.gitlab.util.GitLabBundle
 import org.jetbrains.plugins.gitlab.util.GitLabStatistics
@@ -45,7 +44,7 @@ internal object GitLabDiscussionComponentFactory {
     project: Project,
     cs: CoroutineScope,
     avatarIconsProvider: IconsProvider<GitLabUserDTO>,
-    contextDataLoader: GitLabContextDataLoader,
+    imageLoader: GitLabImageLoader,
     vm: GitLabMergeRequestDiscussionViewModel,
     place: GitLabStatistics.MergeRequestNoteActionPlace,
   ): JComponent {
@@ -60,7 +59,7 @@ internal object GitLabDiscussionComponentFactory {
                                       TimelineThreadCommentsPanel.UNFOLD_BUTTON_VERTICAL_GAP,
                                       0)
         }
-        is NoteItem.Note -> GitLabNoteComponentFactory.create(ComponentType.COMPACT, project, itemCs, avatarIconsProvider, contextDataLoader,
+        is NoteItem.Note -> GitLabNoteComponentFactory.create(ComponentType.COMPACT, project, itemCs, avatarIconsProvider, imageLoader,
                                                               item.vm, place)
       }
     }
@@ -122,7 +121,7 @@ internal object GitLabDiscussionComponentFactory {
     )
     val icon = CommentTextFieldFactory.IconConfig.of(componentType, iconsProvider, editVm.currentUser)
 
-    return CodeReviewCommentTextFieldFactory.createIn(cs, editVm, actions, icon).let {
+    return GitLabCodeReviewCommentTextFieldFactory.createIn(cs, editVm, actions, icon).let {
       CollaborationToolsUIUtil
         .wrapWithLimitedSize(it, maxWidth = CodeReviewChatItemUIUtil.TEXT_CONTENT_WIDTH + componentType.contentLeftShift)
     }.apply {

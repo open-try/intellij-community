@@ -5,6 +5,8 @@ import com.intellij.modcommand.ActionContext;
 import com.intellij.modcommand.ModCommand;
 import com.intellij.modcommand.ModPsiUpdater;
 import com.intellij.openapi.editor.Document;
+import com.intellij.openapi.util.TextRange;
+import com.intellij.psi.PsiFile;
 import org.jetbrains.annotations.NotNullByDefault;
 
 /**
@@ -14,12 +16,26 @@ import org.jetbrains.annotations.NotNullByDefault;
 public abstract class PsiUpdateCompletionItem implements CompletionItem {
   @Override
   public ModCommand perform(ActionContext actionContext, InsertionContext insertionContext) {
-    return ModCommand.psiUpdate(actionContext, updater -> {
-      if (insertionContext.mode() == InsertionMode.OVERWRITE) {
-        updater.getDocument().deleteString(
-          actionContext.offset(), calculateEndOffsetForOverwrite(updater.getDocument(), actionContext.offset()));
-      }
-      update(actionContext, insertionContext, updater);
+    String lookupString = mainLookupString();
+    int completionStart = actionContext.selection().getStartOffset();
+    int prefixEnd = actionContext.selection().getEndOffset();
+    int updatedCaretPos = completionStart + lookupString.length();
+    ActionContext finalActionContext = actionContext
+      .withSelection(TextRange.create(updatedCaretPos, updatedCaretPos))
+      .withOffset(updatedCaretPos);
+    return ModCommand.psiUpdate(finalActionContext, doc -> {
+      doc.deleteString(completionStart, prefixEnd);
+    }, updater -> {
+      Document document = updater.getDocument();
+      PsiFile writableFile = updater.getWritable(finalActionContext.file());
+      document.replaceString(completionStart,
+                             insertionContext.mode() == InsertionMode.OVERWRITE ?
+                             calculateEndOffsetForOverwrite(document, completionStart) : completionStart, lookupString);
+      updater.moveCaretTo(updatedCaretPos);
+      update(actionContext.withOffset(updatedCaretPos)
+               .withSelection(TextRange.create(completionStart, updatedCaretPos)), insertionContext, writableFile, updater);
+      int offset = updater.getCaretOffset();
+      updater.select(TextRange.create(offset, offset));
     });
   }
 
@@ -43,7 +59,13 @@ public abstract class PsiUpdateCompletionItem implements CompletionItem {
    * 
    * @param actionContext context of the action
    * @param insertionContext context of the insertion (like which character was used to finish the completion)
+   * @param file a file copy to update
    * @param updater an updater to use
    */
-  public abstract void update(ActionContext actionContext, InsertionContext insertionContext, ModPsiUpdater updater);
+  public abstract void update(ActionContext actionContext, InsertionContext insertionContext, PsiFile file, ModPsiUpdater updater);
+
+  @Override
+  public String toString() {
+    return mainLookupString();
+  }
 }

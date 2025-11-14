@@ -9,6 +9,7 @@ import com.intellij.codeInsight.lookup.*;
 import com.intellij.ide.highlighter.JavaFileType;
 import com.intellij.java.codeserver.core.JavaPsiSwitchUtil;
 import com.intellij.java.syntax.parser.JavaKeywords;
+import com.intellij.modcompletion.CompletionItemProvider;
 import com.intellij.openapi.editor.CaretModel;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.util.Conditions;
@@ -131,6 +132,10 @@ public class JavaKeywordCompletion {
     myKeywordMatcher = new StartOnlyMatcher(session.getMatcher());
     myPosition = parameters.getPosition();
     myPrevLeaf = prevSignificantLeaf(myPosition);
+    if (CompletionItemProvider.modCommandCompletionEnabled()) {
+      // Replaced with ModCommand-based completion
+      return;
+    }
     if (!isSmart) {
       addKeywords();
     }
@@ -1155,7 +1160,7 @@ public class JavaKeywordCompletion {
           not(psiElement().withText(JavaKeywords.CLASS))))).accepts(element);
   }
 
-  static boolean isAfterTypeDot(PsiElement position) {
+  public static boolean isAfterTypeDot(PsiElement position) {
     if (isInsideParameterList(position) || position.getContainingFile() instanceof PsiJavaCodeReferenceCodeFragment) {
       return false;
     }
@@ -1284,7 +1289,7 @@ public class JavaKeywordCompletion {
    * @param position the PsiElement to check
    * @return true if the position occurs after a case keyword for a specific type, false otherwise
    */
-  private static boolean afterCaseForType(@Nullable PsiElement position) {
+  public static boolean afterCaseForType(@Nullable PsiElement position) {
     if (position == null) return false;
     return psiElement().afterLeaf(JavaKeywords.CASE).accepts(position) &&
            ((position.getParent() instanceof PsiReferenceExpression referenceExpression &&
@@ -1305,7 +1310,7 @@ public class JavaKeywordCompletion {
    * @param position the PsiElement to check
    * @return true if the position occurs after an instanceof keyword for a specific type, false otherwise
    */
-  private static boolean afterInstanceofForType(@Nullable PsiElement position) {
+  public static boolean afterInstanceofForType(@Nullable PsiElement position) {
     if (position == null) return false;
     return (InstanceofTypeProvider.AFTER_INSTANCEOF.accepts(position)) &&
            position.getParent() instanceof PsiJavaCodeReferenceElement referenceElement &&

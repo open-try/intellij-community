@@ -22,7 +22,7 @@ import com.jetbrains.python.PythonInfo
 import com.jetbrains.python.Result
 import com.jetbrains.python.errorProcessing.MessageError
 import com.jetbrains.python.errorProcessing.PyResult
-import com.jetbrains.python.getOrLogException
+import com.jetbrains.python.orLogException
 import com.jetbrains.python.isCondaVirtualEnv
 import com.jetbrains.python.pathValidation.PlatformAndRoot.Companion.getPlatformAndRoot
 import com.jetbrains.python.pathValidation.ValidationRequest
@@ -57,6 +57,7 @@ internal class VenvAlreadyExistsError<P : PathHolder>(
 sealed interface FileSystem<P : PathHolder> {
   val isReadOnly: Boolean
   val isBrowseable: Boolean
+  val isLocal: Boolean
 
   fun parsePath(raw: String): PyResult<P>
   fun validateExecutable(path: P): PyResult<Unit>
@@ -78,6 +79,7 @@ sealed interface FileSystem<P : PathHolder> {
   ) : FileSystem<PathHolder.Eel> {
     override val isBrowseable: Boolean = true
     override val isReadOnly: Boolean = false
+    override val isLocal: Boolean = eelApi == localEel
     override fun getBinaryToExec(path: PathHolder.Eel): BinaryToExec {
       return BinOnEel(path.path)
     }
@@ -186,7 +188,7 @@ sealed interface FileSystem<P : PathHolder> {
       return pythonHome.path.resolvePythonBinary()?.let { PathHolder.Eel(it) }
     }
 
-    override suspend fun which(cmd: String): PathHolder.Eel? = detectTool(cmd, eelApi).mapSuccess { PathHolder.Eel(it) }.successOrNull
+    override suspend fun which(cmd: String): PathHolder.Eel? = detectTool(cmd, eelApi)?.let { PathHolder.Eel(it) }
   }
 
   data class Target(
@@ -197,6 +199,7 @@ sealed interface FileSystem<P : PathHolder> {
       get() = !PythonInterpreterTargetEnvironmentFactory.isMutable(targetEnvironmentConfiguration)
     override val isBrowseable: Boolean
       get() = targetEnvironmentConfiguration.getTargetType() is BrowsableTargetEnvironmentType
+    override val isLocal: Boolean = false
 
     private val systemPythonCache = ArrayList<DetectedSelectableInterpreter<PathHolder.Target>>()
 
@@ -339,7 +342,7 @@ internal suspend fun <P : PathHolder> FileSystem<P>.getExistingSelectableInterpr
       val languageLevel = sdk.versionString?.let {
         PythonSdkFlavor.getLanguageLevelFromVersionStringStaticSafe(it)
       } ?: run {
-        ExecService().validatePythonAndGetInfo(sdk.asBinToExecute()).getOrLogException(LOG)?.languageLevel
+        ExecService().validatePythonAndGetInfo(sdk.asBinToExecute()).orLogException(LOG)?.languageLevel
       }
 
       languageLevel?.let {

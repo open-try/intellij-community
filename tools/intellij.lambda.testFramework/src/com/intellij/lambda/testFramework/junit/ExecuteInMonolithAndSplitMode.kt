@@ -1,6 +1,7 @@
 package com.intellij.lambda.testFramework.junit
 
 import com.intellij.ide.starter.junit5.RemoteDevRun
+import com.intellij.util.SystemProperties
 import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.extension.ExtendWith
 import java.lang.annotation.Inherited
@@ -25,3 +26,6 @@ enum class IdeRunMode {
 )
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 annotation class ExecuteInMonolithAndSplitMode(vararg val mode: IdeRunMode = [IdeRunMode.MONOLITH, IdeRunMode.SPLIT])
+
+
+internal val isGroupedExecutionEnabled: Boolean = SystemProperties.getBooleanProperty("idea.test.grouped.execution", false)

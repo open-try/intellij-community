@@ -3,6 +3,7 @@ package com.intellij.modcompletion;
 
 import com.intellij.modcommand.ActionContext;
 import com.intellij.modcommand.ModCommand;
+import com.intellij.openapi.util.NlsSafe;
 import org.jetbrains.annotations.NotNullByDefault;
 
 import java.util.Set;
@@ -15,13 +16,21 @@ public interface CompletionItem {
   /**
    * @return the string searched for
    */
+  @NlsSafe
   String mainLookupString();
 
   /**
    * @return set of additional lookup strings, if necessary
    */
-  default Set<String> additionalLookupStrings() {
+  default Set<@NlsSafe String> additionalLookupStrings() {
     return Set.of();
+  }
+
+  /**
+   * @return true if the element is still valid (e.g., all the PsiElement's it refers to are still valid)
+   */
+  default boolean isValid() {
+    return true;
   }
 
   /**
@@ -35,9 +44,19 @@ public interface CompletionItem {
   CompletionItemPresentation presentation();
 
   /**
-   * @param actionContext action context where the completion is performed
+   * @return explicit item priority; can be positive or negative. Default is 0.
+   */
+  default double priority() {
+    return 0;
+  }
+
+  /**
+   * @param actionContext action context where the completion is performed. 
+   *                      The selection range denotes the prefix text inserted during the current completion session.
+   *                      The command must ignore it, as at the time it will be applied, the selection range will be deleted. 
    * @param insertionContext an insertion context, which describes how exactly the user invoked the completion
-   * @return the command to perform the completion (e.g., insert the lookup string)
+   * @return the command to perform the completion (e.g., insert the lookup string). The command must assume that the
+   * selection range is already deleted.
    */
   ModCommand perform(ActionContext actionContext, InsertionContext insertionContext);
 
@@ -50,6 +69,11 @@ public interface CompletionItem {
   record InsertionContext(InsertionMode mode, char insertionCharacter) {
     
   }
+
+  /**
+   * Default insertion context for 'insert' mode
+   */
+  InsertionContext DEFAULT_INSERTION_CONTEXT = new InsertionContext(InsertionMode.INSERT, '\n');
   
   enum InsertionMode {
     /**

@@ -222,7 +222,7 @@ public abstract class AbstractJavaBlock extends AbstractBlock implements JavaBlo
     if (elementType == JavaElementType.LABELED_STATEMENT) {
       return new LabeledJavaBlock(child, wrap, alignment, actualIndent, settings, javaSettings, formattingMode);
     }
-    if (elementType == JavaDocElementType.DOC_COMMENT) {
+    if (JavaDocElementType.DOC_COMMENT_TOKENS.contains(elementType)) {
       return new DocCommentBlock(child, wrap, alignment, actualIndent, settings, javaSettings, formattingMode);
     }
     if (isTextBlock(childPsi)) {
@@ -337,9 +337,21 @@ public abstract class AbstractJavaBlock extends AbstractBlock implements JavaBlo
         }
         return Indent.getNoneIndent();
       }
+
+      if (JavaFormatterConditionalExpressionUtil.isInsideConditionalExpression(parent)) {
+        return Indent.getSpaceIndent(0, true);
+      }
     }
 
     return null;
+  }
+
+  private static @Nullable ASTNode skipParenthesesUp(@NotNull ASTNode node) {
+    ASTNode currNode = node.getTreeParent();
+    while (currNode != null && currNode.getElementType() == JavaElementType.PARENTH_EXPRESSION) {
+      currNode = currNode.getTreeParent();
+    }
+    return currNode;
   }
 
   private static @Nullable ASTNode skipCommentsAndWhitespacesBackwards(@NotNull ASTNode node) {
@@ -369,6 +381,7 @@ public abstract class AbstractJavaBlock extends AbstractBlock implements JavaBlo
     if (parentType == JavaElementType.SWITCH_STATEMENT) return Indent.getNoneIndent();
     if (parentType == JavaElementType.METHOD) return Indent.getNoneIndent();
     if (parentType == JavaDocElementType.DOC_COMMENT) return Indent.getNoneIndent();
+    if (parentType == JavaDocElementType.DOC_MARKDOWN_COMMENT) return Indent.getNoneIndent();
     if (parentType == JavaDocElementType.DOC_TAG) return Indent.getNoneIndent();
     if (parentType == JavaDocElementType.DOC_INLINE_TAG) return Indent.getNoneIndent();
     if (parentType == JavaElementType.IMPORT_LIST) return Indent.getNoneIndent();
@@ -826,8 +839,10 @@ public abstract class AbstractJavaBlock extends AbstractBlock implements JavaBlo
       return
         new LegacyChainedMethodCallsBlockBuilder(alignment, blockWrap, indent, mySettings, myJavaSettings, myFormattingMode).build(nodes);
     }
-    return new ChainMethodCallsBlockBuilder(alignment, blockWrap, indent, mySettings, myJavaSettings, myFormattingMode).build(nodes);
+    return new ChainMethodCallsBlockBuilder(alignment, blockWrap, indent, mySettings, myJavaSettings,
+                                            myFormattingMode, JavaFormatterConditionalExpressionUtil.isInsideConditionalExpression(node)).build(nodes);
   }
+
 
   private boolean shouldAlignChild(final @NotNull ASTNode child) {
     int role = getChildRole(child);
@@ -1258,7 +1273,7 @@ public abstract class AbstractJavaBlock extends AbstractBlock implements JavaBlo
     if (myUseChildAttributes) {
       return new ChildAttributes(myChildIndent, myChildAlignment);
     }
-    if (isAfter(newChildIndex, new IElementType[]{JavaDocElementType.DOC_COMMENT})) {
+    if (isAfter(newChildIndex, new IElementType[]{JavaDocElementType.DOC_COMMENT, JavaDocElementType.DOC_MARKDOWN_COMMENT})) {
       return new ChildAttributes(Indent.getNoneIndent(), myChildAlignment);
     }
     return super.getChildAttributes(newChildIndex);

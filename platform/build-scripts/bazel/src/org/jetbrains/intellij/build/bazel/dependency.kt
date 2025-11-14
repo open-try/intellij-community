@@ -2,6 +2,7 @@
 package org.jetbrains.intellij.build.bazel
 
 import com.intellij.openapi.util.NlsSafe
+import org.jetbrains.jps.model.JpsGlobal
 import org.jetbrains.jps.model.JpsSimpleElement
 import org.jetbrains.jps.model.java.JpsJavaDependencyScope
 import org.jetbrains.jps.model.library.JpsMavenRepositoryLibraryDescriptor
@@ -106,6 +107,13 @@ internal fun generateDeps(
       )
     }
     else if (element is JpsLibraryDependency) {
+      if (element.libraryReference.parentReference.resolve() is JpsGlobal) {
+        // <orderEntry type="library" name="Python 3.9 interpreter library" level="application" />
+        // application level references are something we should not handle (it's outside the current project model anyway)
+        println("WARN: application-level library reference '${element.libraryReference}' in module ${module.module.name}, ignored")
+        continue
+      }
+
       val jpsLibrary = element.library ?: error("library dependency '$element' from module ${module.module.name} is not resolved")
       val files: List<Path> = jpsLibrary.getPaths(JpsOrderRootType.COMPILED)
       val repositoryJpsLibrary = jpsLibrary.asTyped(JpsRepositoryLibraryType.INSTANCE)
@@ -339,6 +347,11 @@ internal fun generateDeps(
         plugins.add("@lib//:rpc-plugin")
       }
     }
+    else if (it.name.startsWith("noria-compiler-plugin-") && it.name.endsWith(".jar")) {
+      if (module.module.name == "fleet.noria.cells") {
+        plugins.add("@lib//:noria-plugin")
+      }
+    }
   }
 
   checkForDuplicates("bazel deps", deps)
@@ -389,14 +402,48 @@ private fun getFileMavenFileDescription(m2Repo: Path, lib: JpsTypedLibrary<JpsSi
   val version = jarSubPath.getName(jarSubPath.nameCount - 2).toString()
   val artifactId = jarSubPath.getName(jarSubPath.nameCount - 3).toString()
 
-  val libraryDescriptor = lib.properties.data
-  for (verification in libraryDescriptor.artifactsVerification) {
-    if (JpsPathUtil.urlToNioPath(verification.url) == jar) {
-      return MavenFileDescription(groupId, artifactId, version, path = jar, sha256checksum = verification.sha256sum)
-    }
+  val classifier = jar.name
+    .removePrefixStrict("$artifactId-$version")
+    .removeSuffixStrict(".jar")
+    .removePrefix("-")
+    .ifEmpty { null }
+
+  val coordinates = MavenCoordinates(
+    groupId = groupId,
+    artifactId = artifactId,
+    version = version,
+    classifier = classifier,
+  )
+
+  val sha256sum = lib.properties.data.artifactsVerification
+    .firstOrNull { JpsPathUtil.urlToNioPath(it.url) == jar }
+    ?.sha256sum
+
+  return MavenFileDescription(mavenCoordinates = coordinates, path = jar, sha256checksum = sha256sum)
+}
+
+private fun String.removeSuffixStrict(suffix: String): String {
+  require(suffix.isNotEmpty()) {
+    "suffix must not be empty"
   }
 
-  return MavenFileDescription(groupId, artifactId, version, path = jar, sha256checksum = null)
+  val result = removeSuffix(suffix)
+  require(result != this) {
+    "String must end with $suffix: $this"
+  }
+  return result
+}
+
+private fun String.removePrefixStrict(prefix: String): String {
+  require(prefix.isNotEmpty()) {
+    "prefix must not be empty"
+  }
+
+  val result = removePrefix(prefix)
+  require(result != this) {
+    "String must start with $prefix: $this"
+  }
+  return result
 }
 
 private fun isTestFriend(
@@ -593,17 +640,6 @@ private fun needsBackwardCompatibleTestDependency(
     // See: https://youtrack.jetbrains.com/issue/IJI-2851/ (auto-add dependency on test target only for existing bad modules and forbid it for everything else).
     return true
   }
-}
-
-private fun addSuffix(s: BazelLabel, @Suppress("SameParameterValue") labelSuffix: String): BazelLabel {
-  val lastSlashIndex = s.label.lastIndexOf('/')
-  val labelWithSuffix = (if (s.label.indexOf(':', lastSlashIndex) == -1) {
-    s.label + ":" + s.label.substring(lastSlashIndex + 1)
-  }
-  else {
-    s.label
-  }) + labelSuffix
-  return s.copy(label = labelWithSuffix)
 }
 
 internal fun hasOnlyTestResources(moduleDescriptor: ModuleDescriptor): Boolean {

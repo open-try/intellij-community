@@ -7,10 +7,7 @@ import kotlinx.collections.immutable.plus
 import org.jetbrains.intellij.build.*
 import org.jetbrains.intellij.build.impl.qodana.QodanaProductProperties
 import org.jetbrains.intellij.build.io.copyFileToDir
-import org.jetbrains.intellij.build.productLayout.CommunityModuleSets
-import org.jetbrains.intellij.build.productLayout.ModuleSetProvider
-import org.jetbrains.intellij.build.productLayout.ProductModulesContentSpec
-import org.jetbrains.intellij.build.productLayout.productModules
+import org.jetbrains.intellij.build.productLayout.*
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -68,14 +65,16 @@ open class PyCharmCommunityProperties(protected val communityHome: Path) : PyCha
     moduleSet(CommunityModuleSets.ideCommon())
     moduleSet(CommunityModuleSets.rdCommon())
 
+    // PyCharm Core fragment (includes platformLangBaseFragment, module aliases, and pycharm-core.xml)
+    include(CommunityProductFragments.pycharmCoreFragment())
+
     // Static includes
     deprecatedInclude("intellij.platform.extended.community.impl", "META-INF/community-extensions.xml", ultimateOnly = true)
-    deprecatedInclude("intellij.pycharm.community", "META-INF/pycharm-core.xml")
     deprecatedInclude("intellij.pycharm.community", "META-INF/pycharm-core-customization.xml")
   }
 
-  override suspend fun copyAdditionalFiles(context: BuildContext, targetDir: Path) {
-    super.copyAdditionalFiles(context, targetDir)
+  override suspend fun copyAdditionalFiles(targetDir: Path, context: BuildContext) {
+    super.copyAdditionalFiles(targetDir, context)
 
     val licenseTargetDir = targetDir.resolve("license")
     copyFileToDir(context.paths.communityHomeDir.resolve("LICENSE.txt"), licenseTargetDir)
@@ -88,18 +87,20 @@ open class PyCharmCommunityProperties(protected val communityHome: Path) : PyCha
 
   override fun getBaseArtifactName(appInfo: ApplicationInfoProperties, buildNumber: String): String = "pycharmPC-$buildNumber"
 
-  override fun createWindowsCustomizer(projectHome: String): WindowsDistributionCustomizer = object : WindowsDistributionCustomizer() {
+  override fun createWindowsCustomizer(projectHome: Path): WindowsDistributionCustomizer = object : WindowsDistributionCustomizer() {
     init {
-      icoPath = "${communityHome}/python/build/resources/PyCharmCore.ico"
-      icoPathForEAP = "${communityHome}/python/build/resources/PyCharmCore_EAP.ico"
-      installerImagesPath = "${communityHome}/python/build/resources"
-      fileAssociations = listOf("py")
+      icoPath = communityHome.resolve("python/build/resources/PyCharmCore.ico")
+      icoPathForEAP = communityHome.resolve("python/build/resources/PyCharmCore_EAP.ico")
+      installerImagesPath = communityHome.resolve("python/build/resources")
     }
+
+    override val fileAssociations: List<String>
+      get() = listOf("py")
 
     override fun getFullNameIncludingEdition(appInfo: ApplicationInfoProperties) = "PyCharm Community Edition"
 
-    override suspend fun copyAdditionalFiles(context: BuildContext, targetDir: Path, arch: JvmArchitecture) {
-      super.copyAdditionalFiles(context, targetDir, arch)
+    override suspend fun copyAdditionalFiles(targetDir: Path, arch: JvmArchitecture, context: BuildContext) {
+      super.copyAdditionalFiles(targetDir, arch, context)
       PyCharmBuildUtils.copySkeletons(context, targetDir, "skeletons-win*.zip")
     }
 

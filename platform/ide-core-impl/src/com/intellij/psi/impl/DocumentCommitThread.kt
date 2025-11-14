@@ -1,6 +1,8 @@
 // Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.psi.impl
 
+import com.intellij.codeInsight.multiverse.isEventSystemEnabled
+import com.intellij.codeInsight.multiverse.isSharedSourceSupportEnabled
 import com.intellij.diagnostic.PluginException
 import com.intellij.lang.FileASTNode
 import com.intellij.openapi.Disposable
@@ -8,6 +10,7 @@ import com.intellij.openapi.application.*
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.logger
+import com.intellij.openapi.diagnostic.trace
 import com.intellij.openapi.editor.Document
 import com.intellij.openapi.editor.ex.DocumentEx
 import com.intellij.openapi.fileEditor.FileDocumentManager
@@ -40,7 +43,6 @@ import java.util.concurrent.Callable
 import java.util.concurrent.ConcurrentMap
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
-import java.util.concurrent.atomic.AtomicInteger
 
 private val LOG = logger<DocumentCommitThread>()
 
@@ -91,6 +93,7 @@ class DocumentCommitThread : DocumentCommitProcessor, Disposable {
       return
     }
 
+    @Suppress("SuspiciousPackagePrivateAccess")
     require(documentManager.myProject === project) { "Wrong project: $project; expected: ${documentManager.myProject}" }
 
     TransactionGuard.getInstance().assertWriteSafeContext(modality)
@@ -196,26 +199,25 @@ class DocumentCommitThread : DocumentCommitProcessor, Disposable {
     val finishProcessors = SmartList<BooleanRunnable>()
     val reparseInjectedProcessors = SmartList<BooleanRunnable>()
 
+    LOG.trace { "commitUnderProgress: ${task.myReason}, $document, synchronously: $synchronously " }
 
-    val psiManager = PsiManagerEx.getInstanceEx(project)
-    val virtualFile = FileDocumentManager.getInstance().getFile(document)
-    val viewProvider = if (virtualFile == null) null else psiManager.findViewProvider(virtualFile)
-    if (viewProvider == null) {
+    val viewProviders = findViewProvidersForCommit(document, project)
+    if (viewProviders.isEmpty()) {
       finishProcessors.add(handleCommitWithoutPsi(task, documentManager))
+      task.cachedViewProviders = emptyList()
     }
     else {
-      // While we were messing around transferring things to background thread, the ViewProvider can become obsolete
+      // While we were messing around transferring things to background thread, the ViewProviders can become obsolete
       // when, e.g., a virtual file was renamed.
-      // Store new provider to retain it from GC
-      task.cachedViewProvider = viewProvider
+      // Store new providers to retain them from GC
+      task.cachedViewProviders = viewProviders
 
-      // todo IJPL-339 check if this is correct
-      for (psiFile in viewProvider.getAllFiles()) {
+      for (psiFile in viewProviders.flatMap { it.getAllFiles() }) {
         val oldFileNode = psiFile.getNode()
             ?: throw AssertionError("No node for " + psiFile.javaClass + " in " + psiFile.getViewProvider().javaClass +
                                     " of size " + StringUtil.formatFileSize(document.textLength.toLong()) +
                                     " (is too large = " + SingleRootFileViewProvider
-                                      .isTooLargeForIntelligence(viewProvider.getVirtualFile(), document.textLength.toLong()) + ")")
+                                      .isTooLargeForIntelligence(psiFile.viewProvider.getVirtualFile(), document.textLength.toLong()) + ")")
         val changedPsiRange = ChangedPsiRangeUtil.getChangedPsiRange(
           psiFile,
           document,
@@ -237,6 +239,13 @@ class DocumentCommitThread : DocumentCommitProcessor, Disposable {
       // this document was not referenced by anyone, hence we don't need to perform a write action
       val document = task.myDocumentRef.get() ?: return@task
 
+
+      if (!synchronously && newViewProvidersWereConcurrentlyAdded(document, task.cachedViewProviders, project)) {
+        // add a document back to the queue
+        commitAsynchronously(project, documentManager, document, "Re-added back because of new view providers", task.myCreationModality)
+        return@task
+      }
+
       val success = documentManager.finishCommit(document, finishProcessors, reparseInjectedProcessors, synchronously, task.myReason)
       if (synchronously) {
         assert(success)
@@ -244,10 +253,54 @@ class DocumentCommitThread : DocumentCommitProcessor, Disposable {
       if (synchronously || success) {
         assert(!documentManager.isInUncommittedSet(document))
       }
-      if (!success && viewProvider?.isEventSystemEnabled() == true) {
+      if (!success && task.cachedViewProviders.isEventSystemEnabled()) {
         // add a document back to the queue
         commitAsynchronously(project, documentManager, document, "Re-added back", task.myCreationModality)
       }
+    }
+  }
+
+  private fun findViewProvidersForCommit(document: Document, project: Project): List<FileViewProvider> {
+    val psiManager = PsiManagerEx.getInstanceEx(project)
+    val virtualFile = FileDocumentManager.getInstance().getFile(document) ?: return emptyList()
+
+    if (isSharedSourceSupportEnabled(psiManager.project)) {
+      val cached = psiManager.fileManagerEx.findCachedViewProviders(virtualFile)
+      if (cached.isNotEmpty()) {
+        return cached
+      }
+    }
+    return listOfNotNull(psiManager.findViewProvider(virtualFile))
+  }
+
+  private fun newViewProvidersWereConcurrentlyAdded(
+    document: Document,
+    committedViewProviders: List<FileViewProvider>,
+    project: Project,
+  ): Boolean {
+    val currentProviders = findViewProvidersForCommit(document, project)
+
+    if (committedViewProviders.size != currentProviders.size) {
+      LOG.trace { "Concurrent view provider modification detected. Was: ${committedViewProviders.size}, Now: ${currentProviders.size}. Adding document back to the queue. $document" }
+      return true
+    }
+
+    if (committedViewProviders.size == 1) {
+      if (committedViewProviders.first() == currentProviders.first()) {
+        return false
+      }
+      else {
+        LOG.trace { "Concurrent view provider modification detected: view provider was changed to another one. Adding document back to the queue. $document" }
+        return true
+      }
+    }
+
+    if (committedViewProviders.toSet().containsAll(currentProviders)) {
+      return false
+    }
+    else {
+      LOG.trace { "Concurrent view provider modification detected. Adding document back to the queue. $document" }
+      return true
     }
   }
 
@@ -290,7 +343,9 @@ class DocumentCommitThread : DocumentCommitProcessor, Disposable {
     val myLastCommittedText: CharSequence
     // store initial document modification sequence here to check if it changed later before commit in EDT
     private val myModificationSequence: Int
-    @Volatile var cachedViewProvider: FileViewProvider? = null
+
+    /** initialized under read-action in commitUnderProgress */
+    @Volatile lateinit var cachedViewProviders: List<FileViewProvider>
 
     constructor(
       project: Project,
@@ -396,7 +451,7 @@ class DocumentCommitThread : DocumentCommitProcessor, Disposable {
 
     return BooleanRunnable {
       val document = task.myDocumentRef.get() ?: return@BooleanRunnable false
-      val viewProvider = psiFile.getViewProvider() //todo IJPL-339 figure out correct check here
+      val viewProvider = psiFile.getViewProvider()
       if (task.stillValidDocument() == null || viewProvider !in documentManager.getCachedViewProviders(document)) { // optimistic locking failed
         return@BooleanRunnable false
       }
@@ -409,7 +464,7 @@ class DocumentCommitThread : DocumentCommitProcessor, Disposable {
       diffLog.doActualPsiChange(psiFile)
 
       assertAfterCommit(document, psiFile, oldFileNode) // just to make an impression the field is used
-      Reference.reachabilityFence(task.cachedViewProvider)
+      Reference.reachabilityFence(task.cachedViewProviders)
       true
     }
   }

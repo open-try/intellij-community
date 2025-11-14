@@ -1250,6 +1250,7 @@
     <extendWordSelectionHandler implementation="com.intellij.codeInsight.editorActions.wordSelection.VarargsSelectioner"/>
 
     <modcompletion.completionItemProvider language="JAVA" implementationClass="com.intellij.codeInsight.completion.modcompletion.KeywordCompletionItemProvider"/>
+    <modcompletion.completionItemProvider language="JAVA" implementationClass="com.intellij.codeInsight.completion.modcompletion.InstanceOfClassItemProvider"/>
     
     <completion.skip implementation="com.intellij.codeInsight.completion.AbstractExpectedTypeSkipper" id="skipAbstract"/>
     <completion.skip implementation="com.intellij.codeInsight.completion.DeprecatedSkipper" id="skipDeprecated"/>
@@ -1512,6 +1513,7 @@
     <codeInsight.completion.command.provider language="JAVA" implementationClass="com.intellij.codeInsight.completion.commands.impl.JavaSurroundWithCompletionCommandProvider" order="last"/>
     <codeInsight.completion.command.provider language="JAVA" implementationClass="com.intellij.codeInsight.completion.commands.impl.JavaSafeDeleteCompletionCommandProvider" order="last"/>
     <codeInsight.completion.command.provider language="JAVA" implementationClass="com.intellij.codeInsight.completion.command.commands.ViewStructureCompletionCommandProvider" order="last"/>
+    <codeInsight.completion.command.provider language="JAVA" implementationClass="com.intellij.codeInsight.completion.commands.impl.JavaParameterInfoCompletionCommand" order="last"/>
 
     <weigher implementationClass="com.intellij.codeInsight.completion.LoggerWeigher" key="completion" id="logger"/>
 

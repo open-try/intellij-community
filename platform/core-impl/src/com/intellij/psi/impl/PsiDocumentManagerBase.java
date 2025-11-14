@@ -1047,9 +1047,7 @@ public abstract class PsiDocumentManagerBase extends PsiDocumentManager implemen
       return;
     }
 
-    // todo IJPL-339 is this check correct at all? How can we get view providers from an alien project here???
-    boolean inMyProject = ContainerUtil.exists(viewProviders, viewProvider -> viewProvider.getManager() == myPsiManager);
-    if (!isRelevant || !inMyProject) {
+    if (!isRelevant) {
       clearUncommittedInfo(document);
       return;
     }
@@ -1186,11 +1184,19 @@ public abstract class PsiDocumentManagerBase extends PsiDocumentManager implemen
     VirtualFile virtualFile = FileDocumentManager.getInstance().getFile(document);
     if (virtualFile != null) {
       FileManager fileManager = getFileManager();
-      FileViewProvider viewProvider = fileManager.findCachedViewProvider(virtualFile);
-      if (viewProvider != null) {
+      List<FileViewProvider> viewProviders = fileManager.findCachedViewProviders(virtualFile);
+      boolean isWriteAccess = ApplicationManager.getApplication().isWriteAccessAllowed();
+      if (!viewProviders.isEmpty()) {
         // we can end up outside write action here if the document has forUseInNonAWTThread=true
-        ApplicationManager.getApplication().runWriteAction(ExternalChangeActionUtil.externalChangeAction(() ->
-                                                                                                           ((AbstractFileViewProvider)viewProvider).onContentReload()));
+        ApplicationManager.getApplication().runWriteAction(ExternalChangeActionUtil.externalChangeAction(() -> {
+          List<FileViewProvider> effectiveViewProviders =
+            isWriteAccess ? viewProviders
+                          : fileManager.findCachedViewProviders(virtualFile); // new view providers could appear concurrently
+
+          for (FileViewProvider viewProvider : effectiveViewProviders) {
+            ((AbstractFileViewProvider)viewProvider).onContentReload();
+          }
+        }));
       }
       else if (FileIndexFacade.getInstance(myProject).isInContent(virtualFile)) {
         ApplicationManager.getApplication().runWriteAction(ExternalChangeActionUtil.externalChangeAction(() ->

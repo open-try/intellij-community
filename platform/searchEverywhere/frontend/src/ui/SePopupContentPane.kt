@@ -28,6 +28,10 @@ import com.intellij.platform.searchEverywhere.*
 import com.intellij.platform.searchEverywhere.data.SeDataKeys
 import com.intellij.platform.searchEverywhere.frontend.AutoToggleAction
 import com.intellij.platform.searchEverywhere.frontend.SeSearchStatePublisher
+import com.intellij.platform.searchEverywhere.frontend.SeSelectionListener
+import com.intellij.platform.searchEverywhere.frontend.SeSelectionState
+import com.intellij.platform.searchEverywhere.frontend.SeSelectionResultClose
+import com.intellij.platform.searchEverywhere.frontend.SeSelectionResultText
 import com.intellij.platform.searchEverywhere.frontend.tabs.actions.SeActionItemPresentationRenderer
 import com.intellij.platform.searchEverywhere.frontend.tabs.all.SeAllTab
 import com.intellij.platform.searchEverywhere.frontend.tabs.files.SeTargetItemPresentationRenderer
@@ -66,6 +70,7 @@ import javax.swing.event.ListSelectionEvent
 import javax.swing.text.Document
 import kotlin.concurrent.atomics.AtomicBoolean
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
+import kotlin.math.ceil
 import kotlin.math.roundToInt
 
 @OptIn(ExperimentalAtomicApi::class, ExperimentalCoroutinesApi::class)
@@ -79,6 +84,7 @@ class SePopupContentPane(
   selectedTabId: String,
   initialSearchText: String?,
   initPopupExtendedSize: Dimension?,
+  initialSelectionState: SeSelectionState?,
 ) : JPanel(), Disposable, UiDataProvider {
   val preferableFocusedComponent: JComponent get() = textField
   val searchFieldDocument: Document get() = textField.document
@@ -98,7 +104,8 @@ class SePopupContentPane(
   private val minWidth = Registry.intValue("search.everywhere.new.minimum.width", 700)
 
   private val resultListModel = SeResultListModel(searchStatePublisher) { resultList.selectionModel }
-  private val resultList: JBList<SeResultListRow> = JBList(resultListModel)
+  private val resultList: SeResultJBList<SeResultListRow> = SeResultJBList(resultListModel)
+  private var selectionListener = SeSelectionListener(initialSelectionState, resultList, resultListModel)
   private val textField = SeTextField(initialSearchText) { resultList.accessibleContext }
   private val hintHelper = HintHelper(textField)
   private val resultsScrollPane = createListPane(resultList)
@@ -259,24 +266,21 @@ class SePopupContentPane(
               }
 
               updateViewMode()
+              autoSelectIndex(searchContext.searchPattern, true)
             }
           }.collect { event ->
             withContext(Dispatchers.EDT) {
               hintHelper.setSearchInProgress(false)
               val wasFrozen = resultListModel.freezer.isEnabled
 
-              resultListModel.addFromThrottledEvent(searchId, event)
+              resultListModel.addFromThrottledEvent(searchContext, event)
 
               // Freeze back if it was frozen before
               if (wasFrozen) resultListModel.freezer.enable()
               updateFrozenCount()
 
-              // Autoselect the first element if there were no selection preserved during the update
-              if (resultListModel.size > 0 && resultList.selectedIndices.isEmpty()) {
-                resultList.selectedIndex = 0
-              }
-
               updateViewMode()
+              autoSelectIndex(searchContext.searchPattern, false)
             }
           }
         }
@@ -341,11 +345,16 @@ class SePopupContentPane(
     }
 
     launch {
-      vm.searchFieldWarning.collect { warning ->
+      vm.searchFieldHint.collect { hint ->
         withContext(Dispatchers.EDT) {
-          warning?.let { (text, tooltip) ->
-            hintHelper.setLoadingText(text, tooltip)
-          } ?: hintHelper.setHint(null)
+          hint.let { (text, tooltip, isWarning) ->
+            if (isWarning) {
+              hintHelper.setLoadingText(text, tooltip)
+            }
+            else {
+              hintHelper.setHint(text)
+            }
+          }
         }
       }
     }
@@ -486,10 +495,13 @@ class SePopupContentPane(
       }
     }
 
-    if (vmState.value?.itemsSelected(itemDataList, nonItemDataCount == 0, modifiers) == true) {
+    val selectedItems = vmState.value?.itemsSelected(itemDataList, nonItemDataCount == 0, modifiers)
+    if (selectedItems?.any { it is SeSelectionResultClose } == true) {
       closePopup()
     }
     else {
+      (selectedItems?.filterIsInstance<SeSelectionResultText>()?.firstOrNull())?.let { textField.text = it.searchText }
+
       resultList.repaint()
       refreshPresentations()
     }
@@ -500,7 +512,7 @@ class SePopupContentPane(
 
     val listSize = resultListModel.size
     val firstIndex = resultList.firstVisibleIndex.takeIf { it in 0..<listSize } ?: return
-    val lastIndex = resultList.lastVisibleIndex.takeIf { it in 0..<listSize && it >= firstIndex} ?: return
+    val lastIndex = resultList.lastVisibleIndex.takeIf { it in 0..<listSize && it >= firstIndex } ?: return
 
     val visibleRows = (firstIndex..lastIndex).mapNotNull {
       resultListModel.get(it) as? SeResultListItemRow
@@ -552,6 +564,12 @@ class SePopupContentPane(
       val firstSelectedIndex = resultList.selectedIndex
       if (firstSelectedIndex != -1) {
         extendedInfoComponent?.updateElement(resultList.selectedValue, this@SePopupContentPane)
+      }
+    }
+
+    resultList.addListSelectionListener { _: ListSelectionEvent ->
+      if (!resultList.isAutoSelectionChange) {
+        selectionListener.saveSelectionState(textField.text)
       }
     }
   }
@@ -636,11 +654,9 @@ class SePopupContentPane(
   private fun scrollList(down: Boolean) {
     if (resultList.model.size == 0) return
     if (down) {
-      val cellHeight = resultList.getCellBounds(0, 0)?.height ?: return
-      val viewportHeight = resultsScrollPane.viewport.height
-      val visibleRowCount = viewportHeight / cellHeight
+      val visibleRowCount = getMaxVisibleRowCount()
 
-      val shiftSize = maxOf(1, visibleRowCount - 3)
+      val shiftSize = maxOf(1, visibleRowCount - 4)
       val targetIndex = resultList.selectedIndex + shiftSize
       val modelSize = resultList.model.size
       val hasMoreRow = modelSize > 0 && resultList.model.getElementAt(modelSize - 1) is SeResultListMoreRow
@@ -869,13 +885,17 @@ class SePopupContentPane(
       headerPane.preferredSize.height + textField.preferredSize.height
     }
     else {
-      popupExtendedSize?.height ?: JBUI.CurrentTheme.BigPopup.maxListHeight()
+      getPopupExtendedHeight()
     }
 
     val preferredWidth = popupExtendedSize?.width ?: maxOf(resultsScrollPane.preferredSize.width,
                                                            headerPane.preferredSize.width,
                                                            if (avoidWidthDecreasing) headerPane.width else 0)
     return Dimension(preferredWidth, preferredHeight)
+  }
+
+  private fun getPopupExtendedHeight(): Int {
+    return popupExtendedSize?.height ?: JBUI.CurrentTheme.BigPopup.maxListHeight()
   }
 
   private fun logTabSwitchedEvent(e: AnActionEvent) {
@@ -963,6 +983,29 @@ class SePopupContentPane(
     splitter.setFirstComponent(resultsScrollPane)
     splitter.setSecondComponent(usagePreviewPanel)
     return splitter
+  }
+
+  /**
+   * Calculates the number of rows that can be visible in the scroll pane, including partially visible rows.
+   *
+   * @return the total count of visible rows (both fully and partially visible), or -1 if cell height cannot be determined
+   */
+  private fun getMaxVisibleRowCount(): Int {
+    val cellHeight = resultList.getCellBounds(0, 0)?.height ?: -1
+    val scrollPaneHeight = getPopupExtendedHeight() - headerPane.height - textField.height - (extendedInfoComponent?.component?.height ?: 0)
+    return ceil(scrollPaneHeight.toDouble() / cellHeight).toInt()
+  }
+
+  private fun autoSelectIndex(searchPattern: String, isEndEvent: Boolean) {
+    val indexToSelect = selectionListener.getIndexToSelect(getMaxVisibleRowCount(), searchPattern, textField.isInitialSearchPattern, isEndEvent)
+    if (indexToSelect != -1 && indexToSelect < resultListModel.size() && indexToSelect != resultList.selectedIndex) {
+      resultList.autoSelectIndex(indexToSelect)
+      ScrollingUtil.ensureIndexIsVisible(resultList, resultList.selectedIndex, 1)
+    }
+  }
+
+  fun getSelectionState() : SeSelectionState? {
+    return selectionListener.getSelectionState()
   }
 
   @TestOnly

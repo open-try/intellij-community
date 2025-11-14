@@ -1,6 +1,4 @@
 // Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
-@file:Suppress("ReplaceGetOrSet")
-
 package com.intellij.idea
 
 import com.intellij.accessibility.enableScreenReaderSupportIfNeeded
@@ -21,7 +19,6 @@ import com.intellij.notification.NotificationType
 import com.intellij.openapi.actionSystem.ActionManager
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.application.*
-import com.intellij.openapi.application.ex.ApplicationEx
 import com.intellij.openapi.application.ex.ApplicationManagerEx
 import com.intellij.openapi.components.serviceAsync
 import com.intellij.openapi.diagnostic.getOrLogException
@@ -30,7 +27,6 @@ import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.IntellijInternalApi
 import com.intellij.openapi.util.SystemInfo
-import com.intellij.openapi.util.SystemInfoRt
 import com.intellij.openapi.util.registry.Registry
 import com.intellij.openapi.util.registry.RegistryManager
 import com.intellij.openapi.util.registry.migrateRegistryToAdvSettings
@@ -44,6 +40,7 @@ import com.intellij.platform.ide.diagnostic.startUpPerformanceReporter.FUSProjec
 import com.intellij.ui.mac.touchbar.TouchbarSupport
 import com.intellij.ui.updateAppWindowIcon
 import com.intellij.util.io.URLUtil.SCHEME_SEPARATOR
+import com.intellij.util.system.OS
 import kotlinx.coroutines.*
 import org.jetbrains.annotations.ApiStatus
 import java.nio.file.Path
@@ -93,7 +90,7 @@ open class IdeStarter : ModernApplicationStarter() {
         openProjectBlock()
       }
       else {
-        if ((app as ApplicationEx).isLightEditMode) {
+        if (AppMode.isLightEdit()) {
           FUSProjectHotStartUpMeasurer.lightEditProjectFound()
         }
         withContext(starter, openProjectBlock)
@@ -290,13 +287,12 @@ private fun postOpenUiTasks(scope: CoroutineScope) {
     updateAppWindowIcon(JOptionPane.getRootFrame())
   }
 
-  if (SystemInfoRt.isMac) {
-    @Suppress("GrazieInspection")
+  if (OS.CURRENT == OS.macOS) {
     scope.launch(CoroutineName("mac touchbar on app init")) {
       TouchbarSupport.onApplicationLoaded()
     }
   }
-  else if (SystemInfoRt.isUnix && SystemInfo.isJetBrainsJvm) {
+  else if (OS.CURRENT != OS.Windows && SystemInfo.isJetBrainsJvm) {
     scope.launch(CoroutineName("input method disabling on Linux")) {
       disableInputMethodsIfPossible()
     }
@@ -352,7 +348,7 @@ private fun linksToActions(errors: MutableList<HtmlChunk>): Collection<AnAction>
 
   while (!errors.isEmpty()) {
     val builder = StringBuilder()
-    errors.get(errors.lastIndex).appendTo(builder)
+    errors[errors.lastIndex].appendTo(builder)
     val error = builder.toString()
 
     if (error.startsWith(link)) {
