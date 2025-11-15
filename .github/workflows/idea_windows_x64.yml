@@ -31,6 +31,27 @@ jobs:
       - name: Checkout fork (intellij-community)
         uses: actions/checkout@v4.2.2
 
+      - name: Compute version tag
+        id: versioning
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Date in UTC, pattern YYYYMMDD
+          BUILD_DATE="$(date -u +%Y%m%d)"
+          echo "BUILD_DATE=$BUILD_DATE" | tee -a "$GITHUB_ENV"
+
+          # Read version from top-level build.txt, e.g. 261.SNAPSHOT
+          VERSION_RAW="$(tr -d '\r\n' < build.txt)"
+          echo "VERSION_RAW=$VERSION_RAW" | tee -a "$GITHUB_ENV"
+
+          # Replace SNAPSHOT with date -> YYYYMMDD
+          VERSION_TAG="${VERSION_RAW/SNAPSHOT/${BUILD_DATE}}"
+          echo "VERSION_TAG=$VERSION_TAG" | tee -a "$GITHUB_ENV"
+
+          # Final zip filename per your schema: windows-exe-version-unsigned.zip
+          ZIP_NAME="windows-exe-${VERSION_TAG}-unsigned.zip"
+          echo "ZIP_NAME=$ZIP_NAME" | tee -a "$GITHUB_ENV"
+          
       # 1) Free disk space early (safe default: keep tool-cache)
       - name: Free disk space (remove Android/.NET/large pkgs & old Docker images)
         uses: jlumbroso/free-disk-space@main
@@ -78,27 +99,6 @@ jobs:
           docker builder prune -af || true
           docker system prune -af --volumes || true
       # Pruning containers, images, volumes, and cache avoids leftover layers.
-
-      - name: Compute version tag
-        id: versioning
-        shell: bash
-        run: |
-          set -euo pipefail
-          # Date in UTC, pattern YYYYMMDD
-          BUILD_DATE="$(date -u +%Y%m%d)"
-          echo "BUILD_DATE=$BUILD_DATE" | tee -a "$GITHUB_ENV"
-
-          # Read version from top-level build.txt, e.g. 261.SNAPSHOT
-          VERSION_RAW="$(tr -d '\r\n' < build.txt)"
-          echo "VERSION_RAW=$VERSION_RAW" | tee -a "$GITHUB_ENV"
-
-          # Replace SNAPSHOT with date -> YYYYMMDD
-          VERSION_TAG="${VERSION_RAW/SNAPSHOT/${BUILD_DATE}}"
-          echo "VERSION_TAG=$VERSION_TAG" | tee -a "$GITHUB_ENV"
-
-          # Final zip filename per your schema: windows-exe-version-unsigned.zip
-          ZIP_NAME="windows-exe-${VERSION_TAG}-unsigned.zip"
-          echo "ZIP_NAME=$ZIP_NAME" | tee -a "$GITHUB_ENV"
 
       - name: Checkout JetBrains/android (same ref)
         uses: actions/checkout@v4.2.2
