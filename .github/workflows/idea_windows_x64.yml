@@ -59,6 +59,30 @@ jobs:
           path: android
           ref: ${{ github.ref }}
 
+      # Free disk space early (safe default: keep tool-cache)
+      - name: Free disk space (remove Android/.NET/large pkgs & old Docker images)
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: false   # set to true if you still need more space
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
+      # This action typically frees ~20–31 GB on ubuntu-latest.
+
+      # Move Docker data-root to /mnt (larger temp disk on GH runners)
+      - name: Relocate Docker data-root to /mnt/docker
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo systemctl stop docker
+          sudo rm -rf /mnt/docker
+          sudo mkdir -p /mnt/docker
+          echo '{"data-root":"/mnt/docker"}' | sudo tee /etc/docker/daemon.json
+          sudo systemc
+
       - name: Build Docker environment
         shell: bash
         run: |
@@ -79,6 +103,7 @@ jobs:
             -Dintellij.build.target.os="${TARGET_OS}" \
             -Dintellij.build.target.arch="${TARGET_ARCH}" \
             -Dintellij.build.skip.build.steps=windows_zip_archive
+      # Only Windows + x64; skip the stock Windows zip as before.
 
       - name: List produced files (debug)
         if: always()
@@ -127,6 +152,7 @@ jobs:
           retention-days: 1
           path: ${{ env.ZIP_PATH }}
 
+      # Keep the strong cleanup at the end so the next run starts fresh
       - name: Cleanup (Docker, workspace)
         if: always()
         shell: bash
@@ -136,12 +162,13 @@ jobs:
           echo "::group::Docker cleanup"
           # Stop & remove any leftover containers (best effort)
           docker ps -aq | xargs -r docker rm -f || true
-          # Remove image we created (PRODUCT tag) and everything else unused
+          # Remove image created (PRODUCT tag) and everything else unused
           docker images --format '{{.Repository}}:{{.Tag}}' | grep -E "^${PRODUCT}:" | xargs -r docker rmi -f || true
           docker builder prune -af || true
           docker image prune -af || true
           docker container prune -f || true
           docker volume prune -f || true
+          docker system prune -af --volumes || true
           echo "::endgroup::"
 
           echo "::group::Workspace cleanup"
