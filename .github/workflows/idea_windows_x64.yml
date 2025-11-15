@@ -46,6 +46,16 @@ jobs:
       # [2](https://github.com/jlumbroso/free-disk-space)
       # [3](https://github.com/marketplace/actions/free-disk-space-ubuntu)
 
+      - name: Free disk space (as much as needed only necessary for build)
+        uses: easimon/maximize-build-space@master
+        with:
+          root-reserve-mb: 512
+          temp-reserve-mb: 512
+          remove-dotnet: 'true'
+          remove-android: 'true'
+          remove-haskell: 'true'
+          remove-codeql: 'true'
+
       # 2) Move Docker data-root to /mnt (larger temp disk on GH runners)
       - name: Relocate Docker data-root to /mnt/docker
         shell: bash
@@ -69,7 +79,7 @@ jobs:
           docker system prune -af --volumes || true
       # Pruning containers, images, volumes, and cache avoids leftover layers.
 
-      - name: Compute date + read build.txt + compute version tag
+      - name: Compute version tag
         id: versioning
         shell: bash
         run: |
@@ -129,17 +139,31 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          
           checksum() {
             local f="$1"
+            # macOS uses 'shasum', Linux runners use 'sha256sum'
             if [ "$(uname)" = "Darwin" ]; then
-              shasum --algorithm 256 --binary "$f"
-            else
-              sha256sum --binary "$f"
-            fi > "$f.sha256"
+              shasum --algorithm 256 --binary "$f" > "$f.sha256"
+           else
+              sha256sum --binary "$f" > "$f.sha256"
+           fi
           }
+          
           cd "${ARTIFACTS_DIR}"
-          for it in *.exe; do echo "checksum: $it"; checksum "$it"; done
-          for it in *.exe.spdx.json 2>/dev/null; do echo "checksum: $it"; checksum "$it"; done
+          
+          # If no files match a glob, the glob expands to nothing (loop is skipped)
+          shopt -s nullglob
+          
+          for it in *.exe; do
+            echo "checksum: $it"
+            checksum "$it"
+          done
+          
+          for it in *.exe.spdx.json; do
+            echo "checksum: $it"
+            checksum "$it"
+          done
 
       - name: Package unsigned Windows exe into versioned zip
         shell: bash
