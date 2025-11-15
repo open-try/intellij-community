@@ -81,7 +81,8 @@ jobs:
           sudo rm -rf /mnt/docker
           sudo mkdir -p /mnt/docker
           echo '{"data-root":"/mnt/docker"}' | sudo tee /etc/docker/daemon.json
-          sudo systemc
+          sudo systemctl daemon-reload
+          sudo systemctl start docker
 
       - name: Build Docker environment
         shell: bash
