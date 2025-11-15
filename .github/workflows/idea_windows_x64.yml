@@ -2,10 +2,8 @@
 name: IntelliJ IDEA — Windows x64 (manual)
 
 on:
-  # Manual trigger only
   workflow_dispatch: {}
 
-# Prevent accidental parallel builds of the same ref
 concurrency:
   group: idea-win64-${{ github.ref }}
   cancel-in-progress: false
@@ -13,62 +11,60 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  PRODUCT: intellij_idea
+  TARGET_OS: windows
+  TARGET_ARCH: x64
+  ARTIFACTS_DIR: out/idea-ce/artifacts
+  # Adjust these two if your Dockerfile lives elsewhere
+  BUILD_CONTEXT: .
+  DOCKERFILE_PATH: ./Dockerfile
+
 jobs:
   build-windows-x64:
-    name: Build IDEA.exe (Windows x64)
-    # Only allow manual runs on master
+    # Manual runs are only allowed on master
     if: github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
-    env:
-      PRODUCT: intellij_idea
-      TARGET_OS: windows
-      TARGET_ARCH: x64
-      ARTIFACTS_DIR: out/idea-ce/artifacts
-
     steps:
+      # 1) Checkout this repo (shallow = latest 1 commit)
       - name: Checkout fork (intellij-community)
-        uses: actions/checkout@v4.2.2
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
 
+      # 2) Compute version tag
       - name: Compute version tag
         id: versioning
         shell: bash
         run: |
           set -euo pipefail
-          # Date in UTC, pattern YYYYMMDD
           BUILD_DATE="$(date -u +%Y%m%d)"
           echo "BUILD_DATE=$BUILD_DATE" | tee -a "$GITHUB_ENV"
-
-          # Read version from top-level build.txt, e.g. 261.SNAPSHOT
           VERSION_RAW="$(tr -d '\r\n' < build.txt)"
           echo "VERSION_RAW=$VERSION_RAW" | tee -a "$GITHUB_ENV"
-
-          # Replace SNAPSHOT with date -> YYYYMMDD
           VERSION_TAG="${VERSION_RAW/SNAPSHOT/${BUILD_DATE}}"
           echo "VERSION_TAG=$VERSION_TAG" | tee -a "$GITHUB_ENV"
-
-          # Final zip filename per your schema: windows-exe-version-unsigned.zip
           ZIP_NAME="windows-exe-${VERSION_TAG}-unsigned.zip"
           echo "ZIP_NAME=$ZIP_NAME" | tee -a "$GITHUB_ENV"
-          
-      # 1) Free disk space early (safe default: keep tool-cache)
-      - name: Free disk space (remove Android/.NET/large pkgs & old Docker images)
+
+      # 3) Free disk space safely (does NOT touch workspace)
+      - name: Free disk space (remove Android/.NET/Haskell, large pkgs, Docker images, swap)
         uses: jlumbroso/free-disk-space@main
         with:
-          tool-cache: false   # set to true if you still need more space
+          tool-cache: false
           android: true
           dotnet: true
           haskell: true
           large-packages: true
           docker-images: true
           swap-storage: true
-      # This action typically frees ~20–31 GB on ubuntu-latest.
-      # [2](https://github.com/jlumbroso/free-disk-space)
-      # [3](https://github.com/marketplace/actions/free-disk-space-ubuntu)
+      # The action above typically recovers ~20–31 GB on ubuntu-latest. [6](https://github.com/jlumbroso/free-disk-space)[7](https://www.yellowduck.be/posts/free-disk-space-ubuntu-github-marketplace)
 
-      - name: Free disk space (as much as needed only necessary for build)
-        uses: easimon/maximize-build-space@master
+      # 4) Expand Docker storage ONLY (do not mount over workspace)
+      - name: Maximize build space for Docker only
+        uses: easimon/maximize-build-space@v10
         with:
           root-reserve-mb: 512
           temp-reserve-mb: 512
@@ -76,129 +72,120 @@ jobs:
           remove-android: 'true'
           remove-haskell: 'true'
           remove-codeql: 'true'
+          # Critical: mount extra space under Docker data dir, not $GITHUB_WORKSPACE
+          build-mount-path: '/var/lib/docker'
+      # Constraining to /var/lib/docker avoids shadowing the workspace that caused missing files. [1](https://github.com/easimon/maximize-build-space/blob/master/README.md)[2](https://github.com/easimon/maximize-build-space/releases)
 
-      # 2) Move Docker data-root to /mnt (larger temp disk on GH runners)
-      - name: Relocate Docker data-root to /mnt/docker
-        shell: bash
+      - name: Restart Docker to pick up mount (best effort)
         run: |
-          set -euxo pipefail
-          sudo systemctl stop docker
-          sudo rm -rf /mnt/docker
-          sudo mkdir -p /mnt/docker
-          echo '{"data-root":"/mnt/docker"}' | sudo tee /etc/docker/daemon.json
-          sudo systemctl start docker
-          docker info | grep 'Docker Root Dir' || true
-      # Using daemon.json to set "data-root" is the supported method.
-      # [4](https://linuxiac.com/how-to-change-docker-data-directory/)
-      # [5](https://stackoverflow.com/questions/24309526/how-to-change-the-docker-image-installation-directory)
+          sudo systemctl restart docker || sudo service docker restart
+          docker info >/dev/null
 
-      # 3) Pre-build hard prune to start from a clean Docker state
-      - name: Docker pre-build prune
-        shell: bash
-        run: |
-          docker builder prune -af || true
-          docker system prune -af --volumes || true
-      # Pruning containers, images, volumes, and cache avoids leftover layers.
+      - name: Show disk usage (debug)
+        run: df -h
 
-      - name: Checkout JetBrains/android (same ref)
-        uses: actions/checkout@v4.2.2
+      # 5) Checkout JetBrains/android (shallow, independent default branch)
+      - name: Checkout JetBrains/android
+        uses: actions/checkout@v4
         with:
           repository: JetBrains/android
           path: android
-          ref: ${{ github.ref }}
+          fetch-depth: 1
+          # If you really must match a branch name, set `ref: ${{ github.ref_name }}`; be aware the branch must exist in that repo.
 
+      # 6) Docker pre-build prune (clean build cache & leftovers)
+      - name: Docker pre-build prune
+        run: |
+          docker builder prune -af || true
+          docker system prune -af --volumes || true
+
+      # 7) Assert Dockerfile exists & show context (preflight)
+      - name: Verify Dockerfile and context
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Looking for Dockerfile at: ${DOCKERFILE_PATH}"
+          test -f "${DOCKERFILE_PATH}" || { echo "::error::Dockerfile not found at ${DOCKERFILE_PATH}. Update DOCKERFILE_PATH or move the file."; exit 1; }
+          echo "Build context contents (top-level):"
+          ls -la "${BUILD_CONTEXT}"
+
+      # 8) Build Docker environment image (multi-stage target = PRODUCT)
+      #    If your Dockerfile is not at repo root, the -f and context ensure correct resolution.
       - name: Build Docker environment for ${{ env.PRODUCT }}
         shell: bash
         run: |
-          docker build . \
+          docker build "${BUILD_CONTEXT}" \
+            -f "${DOCKERFILE_PATH}" \
             --target "${PRODUCT}" \
             --tag "${PRODUCT}"
 
+      # 9) Build Windows x64 .exe via Docker
       - name: Build Windows x64 .exe via Docker
         shell: bash
         run: |
-          # Build only Windows + x64, and skip upstream Windows zip distribution to save time
           docker run --rm \
             --user "$(id -u)" \
             --volume "${PWD}:/community" \
             "${PRODUCT}" \
-            -Dintellij.build.target.os="${TARGET_OS}" \
-            -Dintellij.build.target.arch="${TARGET_ARCH}" \
-            -Dintellij.build.skip.build.steps=windows_zip_archive
-      # Only Windows + x64; skip the stock Windows zip as before.
-      # [8](https://saturncloud.io/blog/github-action-ecr-optimizing-disk-space/)
+              -Dintellij.build.target.os="${TARGET_OS}" \
+              -Dintellij.build.target.arch="${TARGET_ARCH}" \
+              -Dintellij.build.skip.build.steps=windows_zip_archive
 
+      # 10) List produced files (debug)
       - name: List produced files (debug)
         if: always()
-        shell: bash
         run: |
           echo "Contents of ${ARTIFACTS_DIR}:"
           ls -lah "${ARTIFACTS_DIR}" || true
 
-      - name: Generate SHA-256 checksums for .exe (+ SPDX if present)
+      # 11) Checksums (exe and SPDX if present)
+      - name: Generate SHA-256 checksums
         shell: bash
         run: |
           set -euo pipefail
-          
           checksum() {
             local f="$1"
-            # macOS uses 'shasum', Linux runners use 'sha256sum'
-            if [ "$(uname)" = "Darwin" ]; then
-              shasum --algorithm 256 --binary "$f" > "$f.sha256"
-           else
-              sha256sum --binary "$f" > "$f.sha256"
-           fi
+            if [ "$(uname)" = "Darwin" ]; then shasum --algorithm 256 --binary "$f" > "$f.sha256"
+            else sha256sum --binary "$f" > "$f.sha256"; fi
           }
-          
           cd "${ARTIFACTS_DIR}"
-          
-          # If no files match a glob, the glob expands to nothing (loop is skipped)
           shopt -s nullglob
-          
-          for it in *.exe; do
-            echo "checksum: $it"
-            checksum "$it"
-          done
-          
-          for it in *.exe.spdx.json; do
+          for it in *.exe *.exe.spdx.json; do
+            [ -e "$it" ] || continue
             echo "checksum: $it"
             checksum "$it"
           done
 
+      # 12) Package unsigned exe into versioned zip
       - name: Package unsigned Windows exe into versioned zip
         shell: bash
         run: |
           set -euo pipefail
           cd "${ARTIFACTS_DIR}"
           ZIP_PATH="${{ github.workspace }}/${ZIP_NAME}"
-
-          # Include the unsigned .exe, its checksum(s), and SPDX (if present)
-          # If spdx or sha256 are missing, zip will warn about no matches; ensure exe exists.
           ls -l *.exe
-          zip -9 -y "$ZIP_PATH" *.exe *.spdx.json *.sha256 2>/dev/null || \
+          # try include SPDX and checksums if available
+          zip -9 -y "$ZIP_PATH" *.exe *.spdx.json *.sha256 2>/dev/null || true
+          # ensure at least the exe is packed
           zip -9 -y "$ZIP_PATH" *.exe
-
           echo "ZIP_PATH=$ZIP_PATH" >> "$GITHUB_ENV"
 
       - name: Upload versioned zip
-        uses: actions/upload-artifact@v4.4.3
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ env.ZIP_NAME }}
           if-no-files-found: error
           retention-days: 1
           path: ${{ env.ZIP_PATH }}
 
-      # Keep the strong cleanup at the end so the next run starts fresh
+      # 13) Cleanup (Docker + workspace) after upload
       - name: Cleanup (Docker, workspace)
         if: always()
         shell: bash
         run: |
           set -euxo pipefail
-
           echo "::group::Docker cleanup"
-          # Stop & remove any leftover containers (best effort)
           docker ps -aq | xargs -r docker rm -f || true
-          # Remove image created (PRODUCT tag) and everything else unused
           docker images --format '{{.Repository}}:{{.Tag}}' | grep -E "^${PRODUCT}:" | xargs -r docker rmi -f || true
           docker builder prune -af || true
           docker image prune -af || true
@@ -208,11 +195,6 @@ jobs:
           echo "::endgroup::"
 
           echo "::group::Workspace cleanup"
-          # Remove build outputs and auxiliary checkouts
           rm -rf "${ARTIFACTS_DIR}" android out || true
-          rm -rf android out || true
-
-          # Deep clean the repo workspace (including hidden files like .git)
-          # Do this at the very end so it doesn't interfere with upload steps
           git clean -ffdx || true
           echo "::endgroup::"
