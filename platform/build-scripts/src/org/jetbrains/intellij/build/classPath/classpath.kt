@@ -40,11 +40,14 @@ import java.nio.file.Path
 import kotlin.io.path.invariantSeparatorsPathString
 import kotlin.io.path.relativeToOrSelf
 
-internal fun generateClassPathByLayoutReport(libDir: Path, entries: List<DistributionFileEntry>, skipNioFs: Boolean): Set<Path> {
+fun generateClassPathByLayoutReport(libDir: Path, entries: List<DistributionFileEntry>, skipNioFs: Boolean, includeProductModule: (String) -> Boolean = { false }): Set<Path> {
   val classPath = LinkedHashSet<Path>()
   for (entry in entries) {
-    if (entry is ModuleOwnedFileEntry && entry.owner?.reason == ModuleIncludeReasons.PRODUCT_MODULES) {
-      continue
+    if (entry is ModuleOwnedFileEntry) {
+      val owner = entry.owner
+      if (owner != null && owner.reason == ModuleIncludeReasons.PRODUCT_MODULES && !includeProductModule(owner.moduleName)) {
+        continue
+      }
     }
 
     // exclude files like ext/platform-main.jar - if a file in lib, take only direct children in an account
@@ -107,7 +110,7 @@ internal fun generateCoreClasspathFromPlugins(
   for (pluginEntity in pluginEntities) {
     val pluginLayout = pluginEntity.layout
     val cacheContainer = platformLayout.descriptorCacheContainer.forPlugin(pluginEntity.dir)
-    val classPathModules = getEmbeddedContentModulesOfPluginsWithUseIdeaClassloader(context, pluginLayout.mainModule, cacheContainer)
+    val classPathModules = getEmbeddedContentModulesOfPluginsWithUseIdeaClassloader(pluginLayout.mainModule, cacheContainer, context)
     for (distributionEntry in pluginEntity.distribution) {
       if (distributionEntry is ModuleOwnedFileEntry && distributionEntry.owner?.moduleName in classPathModules) {
         classPathResult.add(distributionEntry.path)
@@ -122,9 +125,9 @@ internal fun generateCoreClasspathFromPlugins(
  * These modules should be included in the core classpath, also their libraries should be treated as platform libraries.
  */
 internal fun getEmbeddedContentModulesOfPluginsWithUseIdeaClassloader(
-  context: BuildContext,
   pluginMainModule: String,
   cacheContainer: ScopedCachedDescriptorContainer?,
+  context: BuildContext,
 ): Set<String> {
   val pluginModule = context.findRequiredModule(pluginMainModule)
   val pluginXmlBytes = cacheContainer?.getCachedFileData(PLUGIN_XML_RELATIVE_PATH) ?: getUnprocessedPluginXmlContent(pluginModule, context)
@@ -133,7 +136,8 @@ internal fun getEmbeddedContentModulesOfPluginsWithUseIdeaClassloader(
   if (rootElement.getAttribute("use-idea-classloader")?.value?.toBoolean() != true) {
     return emptySet()
   }
-  val embeddedModules = mutableSetOf(pluginMainModule)
+  val embeddedModules = LinkedHashSet<String>()
+  embeddedModules.add(pluginMainModule)
   filterAndProcessContentModules(rootElement, pluginMainModule, context) { _, moduleName, loadingRule ->
     if (loadingRule == "embedded") {
       embeddedModules.add(moduleName)

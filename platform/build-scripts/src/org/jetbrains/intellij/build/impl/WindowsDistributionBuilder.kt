@@ -455,7 +455,7 @@ private suspend fun checkThatExeInstallerAndZipWithJbrAreTheSame(
         }
     }
     if (!context.options.buildStepsToSkip.contains(BuildOptions.REPAIR_UTILITY_BUNDLE_STEP)) {
-      RepairUtilityBuilder.generateManifest(context, tempExe, OsFamily.WINDOWS, arch)
+      RepairUtilityBuilder.generateManifest(tempExe, OsFamily.WINDOWS, arch, context)
     }
   }
   finally {
@@ -472,12 +472,12 @@ private fun computeIcoPath(context: BuildContext): Path {
     return icoPath
 }
 
-private fun writeWindowsVmOptions(distBinDir: Path, context: BuildContext): Path {
-  val vmOptionsFile = distBinDir.resolve("${context.productProperties.baseFileName}64.exe.vmoptions")
-  val vmOptions = generateVmOptions(context).asSequence()
-  writeVmOptions(file = vmOptionsFile, vmOptions = vmOptions, separator = "\r\n")
-  return vmOptionsFile
-}
+  private fun writeWindowsVmOptions(distBinDir: Path, context: BuildContext): Path {
+    val vmOptionsFile = distBinDir.resolve("${context.productProperties.baseFileName}64.exe.vmoptions")
+    val vmOptions = VmOptionsGenerator.generate(context).asSequence()
+    VmOptionsGenerator.writeVmOptions(vmOptionsFile, vmOptions, separator = "\r\n")
+    return vmOptionsFile
+  }
 
 private suspend fun writeProductJsonFile(targetDir: Path, arch: JvmArchitecture, context: BuildContext, withRuntime: Boolean = true): Path {
   val embeddedFrontendLaunchData = generateEmbeddedFrontendLaunchData(arch, OsFamily.WINDOWS, context) {
