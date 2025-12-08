@@ -271,6 +271,10 @@ object CommunityLibraryLicenses {
       .apache("https://cs.android.com/androidx/platform/frameworks/support/+/androidx-main:LICENSE.txt")
       .suppliedByOrganizations(Suppliers.GOOGLE),
 
+    LibraryLicense("Compose Runtime Retained", libraryName = "androidx.compose.runtime.retain.desktop", url = "https://source.android.com/")
+      .apache("https://cs.android.com/androidx/platform/frameworks/support/+/androidx-main:LICENSE.txt")
+      .suppliedByOrganizations(Suppliers.GOOGLE),
+
     LibraryLicense("Compose Runtime Saveable Desktop", libraryName = "androidx.compose.runtime.saveable.desktop", url = "https://source.android.com/")
       .apache("https://cs.android.com/androidx/platform/frameworks/support/+/androidx-main:LICENSE.txt")
       .suppliedByOrganizations(Suppliers.GOOGLE),
@@ -370,10 +374,6 @@ object CommunityLibraryLicenses {
 
     LibraryLicense("gauge-java", libraryName = "com.thoughtworks.gauge:gauge-java", url = "https://github.com/getgauge/gauge-java/")
       .apache("https://github.com/getgauge/gauge-java/raw/master/LICENSE.txt"),
-
-    LibraryLicense("Gherkin", libraryName = "gherkin", url = "https://github.com/cucumber/gherkin/tree/main")
-      .mit("https://github.com/cucumber/gherkin/blob/main/LICENSE")
-      .suppliedByOrganizations("Cucumber Ltd"),
 
     LibraryLicense("Gherkin keywords", version = "2.12.2", attachedTo = "intellij.gherkin", url = "https://github.com/cucumber/gherkin/tree/main")
       .mit("https://github.com/cucumber/gherkin/blob/main/LICENSE")
@@ -796,6 +796,10 @@ object CommunityLibraryLicenses {
       .apache("https://github.com/JetBrains/kotlin/blob/master/license/LICENSE.txt")
       .suppliedByOrganizations(Suppliers.JETBRAINS),
 
+    LibraryLicense("kotlin-metadata-jvm", libraryName = "kotlin-metadata-jvm", url = "https://github.com/JetBrains/kotlin")
+      .apache("https://github.com/JetBrains/kotlin/blob/master/license/LICENSE.txt")
+      .suppliedByOrganizations(Suppliers.JETBRAINS),
+
     LibraryLicense("Kotlin Coroutines for Guava", libraryName = "kotlinx-coroutines-guava", url = "https://github.com/Kotlin/kotlinx.coroutines")
       .apache("https://github.com/Kotlin/kotlinx.coroutines/blob/master/LICENSE.txt")
       .suppliedByOrganizations(Suppliers.JETBRAINS),
@@ -856,7 +860,7 @@ object CommunityLibraryLicenses {
       .apache("https://github.com/Kotlin/kotlinx.html/blob/master/LICENSE")
       .suppliedByOrganizations(Suppliers.JETBRAINS),
 
-    LibraryLicense("Kryo5", libraryName = "Kryo5", url = "https://github.com/EsotericSoftware/kryo")
+    LibraryLicense("kryo", libraryName = "kryo", url = "https://github.com/EsotericSoftware/kryo")
       .newBsd("https://github.com/EsotericSoftware/kryo/blob/master/LICENSE.md")
       .suppliedByPersons("Nathan Sweet"),
 

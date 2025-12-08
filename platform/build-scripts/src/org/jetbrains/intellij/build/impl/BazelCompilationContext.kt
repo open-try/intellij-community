@@ -4,8 +4,7 @@
 package org.jetbrains.intellij.build.impl
 
 import com.intellij.util.io.URLUtil
-import com.intellij.util.system.CpuArch
-import com.intellij.util.system.OS
+import io.opentelemetry.api.trace.Span
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.decodeFromStream
@@ -20,7 +19,10 @@ import org.jetbrains.intellij.build.impl.moduleBased.buildOriginalModuleReposito
 import org.jetbrains.intellij.build.moduleBased.OriginalModuleRepository
 import org.jetbrains.jps.model.JpsModel
 import org.jetbrains.jps.model.JpsProject
+import org.jetbrains.jps.model.java.JpsJavaClasspathKind
+import org.jetbrains.jps.model.java.JpsJavaExtensionService
 import org.jetbrains.jps.model.module.JpsModule
+import org.jetbrains.jps.model.module.JpsModuleReference
 import java.io.File
 import java.net.URI
 import java.nio.file.Path
@@ -34,7 +36,7 @@ class BazelCompilationContext(
 ) : CompilationContext {
 
   private val moduleOutputProvider by lazy {
-    BazelModuleOutputProvider(delegate.project.modules, delegate.paths.projectHome)
+    BazelModuleOutputProvider(delegate.project.modules, delegate.paths.projectHome, bazelOutputRoot!!)
   }
 
   override val options: BuildOptions
@@ -69,21 +71,41 @@ class BazelCompilationContext(
 
   override fun findRequiredModule(name: String): JpsModule = delegate.findRequiredModule(name)
 
+  override fun findLibraryRoots(libraryName: String, moduleLibraryModuleName: String?): List<Path> {
+    return moduleOutputProvider.findLibraryRoots(libraryName, moduleLibraryModuleName)
+  }
+
   override fun findModule(name: String): JpsModule? = delegate.findModule(name)
 
   override fun getModuleOutputRoots(module: JpsModule, forTests: Boolean): List<Path> {
     return moduleOutputProvider.getModuleOutputRoots(module, forTests)
   }
 
-  override suspend fun getModuleRuntimeClasspath(module: JpsModule, forTests: Boolean): List<String> {
-    return delegate.getModuleRuntimeClasspath(module, forTests).map(Path::of).flatMap {
-      if (it.startsWith(classesOutputDirectory)) {
-        getModuleOutputRoots(findRequiredModule(it.name), it.parent.name == "test").map { it.toString() }
+  override suspend fun getModuleRuntimeClasspath(module: JpsModule, forTests: Boolean): Collection<Path> {
+    val enumerator = JpsJavaExtensionService.dependencies(module).recursively()
+      .also {
+        if (forTests) {
+          it.withoutSdk()
+        }
       }
-      else {
-        listOf(it.toString())
+      .includedIn(JpsJavaClasspathKind.runtime(forTests))
+
+    val result = LinkedHashSet<Path>()
+    enumerator.processModuleAndLibraries(
+      { depModule ->
+        result.addAll(moduleOutputProvider.getModuleOutputRoots(depModule, forTests = forTests))
+        if (forTests) {  // incl. production
+          result.addAll(moduleOutputProvider.getModuleOutputRoots(depModule, forTests = false))
+        }
+      },
+      { library ->
+        val moduleLibraryModuleName = (library.createReference().parentReference as? JpsModuleReference)?.moduleName
+        for (path in moduleOutputProvider.findLibraryRoots(library.name, moduleLibraryModuleName)) {
+          result.add(path)
+        }
       }
-    }
+    )
+    return result
   }
 
   override fun findFileInModuleSources(moduleName: String, relativePath: String, forTests: Boolean): Path? = delegate.findFileInModuleSources(moduleName, relativePath, forTests)
@@ -103,7 +125,8 @@ class BazelCompilationContext(
   override suspend fun prepareForBuild(): Unit = delegate.prepareForBuild()
 
   override suspend fun compileModules(moduleNames: Collection<String>?, includingTestsInModules: List<String>?) {
-    delegate.compileModules(moduleNames, includingTestsInModules)
+    // Be sure to call ./bazel-build-all.cmd
+    // Later we will add all required Bazel dependencies to the build scripts target
   }
 
   override suspend fun withCompilationLock(block: suspend () -> Unit): Unit = delegate.withCompilationLock(block)
@@ -130,34 +153,12 @@ class BazelCompilationContext(
   }
 
   class BazelTargetsInfo {
-    data class ModuleOutputRoots(val productionJars: List<Path>, val testJars: List<Path>)
-
     companion object {
-      fun loadModulesOutputRootsFromBazelTargetsJson(projectRoot: Path): Map<String, ModuleOutputRoots> {
-        val bazelTargetsJsonFile = projectRoot.resolve("build").resolve("bazel-targets.json")
-        val targetsFile = bazelTargetsJsonFile.inputStream().use { Json.decodeFromStream<TargetsFile>(it) }
+      fun bazelTargetsJsonFile(projectHome: Path): Path = projectHome.resolve("build").resolve("bazel-targets.json")
 
-        val CONF = "$bazelOsArch-fastbuild"
-        return targetsFile.modules.mapValues { (_, targetsFileModuleDescription) ->
-          ModuleOutputRoots(
-            productionJars = targetsFileModuleDescription.productionJars.map {
-              projectRoot.resolve(it.replace("\${CONF}", CONF))
-            },
-            testJars = targetsFileModuleDescription.testJars.map {
-              projectRoot.resolve(it.replace("\${CONF}", CONF))
-            },
-          )
-        }
-      }
-
-      private val bazelOsArch = when (OS.CURRENT to CpuArch.CURRENT) {
-        OS.Linux to CpuArch.X86_64 -> "k8"
-        OS.Linux to CpuArch.ARM64 -> "aarch64"
-        OS.Windows to CpuArch.X86_64 -> "x64_windows"
-        OS.Windows to CpuArch.ARM64 -> "arm64_windows"
-        OS.macOS to CpuArch.ARM64 -> "darwin_arm64"
-        OS.macOS to CpuArch.X86_64 -> "darwin_x86_64"
-        else -> error("Unsupported OS/Arch: ${OS.CURRENT} ${CpuArch.CURRENT}")
+      fun loadBazelTargetsJson(projectRoot: Path): TargetsFile {
+        val targetsFile = bazelTargetsJsonFile(projectRoot).inputStream().use { Json.decodeFromStream<TargetsFile>(it) }
+        return targetsFile
       }
     }
 
@@ -168,24 +169,52 @@ class BazelCompilationContext(
       val testTargets: List<String>,
       val testJars: List<String>,
       val exports: List<String>,
+      val moduleLibraries: Map<String, LibraryDescription>,
+    )
+
+    @Serializable
+    data class LibraryDescription(
+      val target: String,
+      val jars: List<String>,
+      val sourceJars: List<String>,
     )
 
     @Serializable
     data class TargetsFile(
       val modules: Map<String, TargetsFileModuleDescription>,
-      val projectLibraries: Map<String, String>,
+      val projectLibraries: Map<String, LibraryDescription>,
     )
   }
 }
 
 @ApiStatus.Internal
-fun isRunningFromBazelOut(): Boolean {
+fun isRunningFromBazelOut(): Boolean = bazelOutputRoot != null
+
+internal val bazelOutputRoot: Path? by lazy {
   val url = BazelCompilationContext::class.java.getResource("${BazelCompilationContext::class.java.simpleName}.class")
-  if (url == null) {
-    error("Unable to get '${BazelCompilationContext::class.java.simpleName}.class' file from resources")
+            ?: error("Unable to get '${BazelCompilationContext::class.java.simpleName}.class' file from resources")
+
+  if (url.protocol != URLUtil.JAR_PROTOCOL) {
+    return@lazy null
   }
 
-  return url.protocol == URLUtil.JAR_PROTOCOL && Path.of(URI.create(url.path)).any { it.pathString == "bazel-out" }
+  val path = Path.of(URI.create(url.path.substringBefore("!/")))
+
+  if (path.none { it.pathString == "bazel-out" }) {
+    // not running from bazel out
+    return@lazy null
+  }
+
+  // resolving all symlinks should lead to the bazel output directory
+  val realPath = path.toRealPath()
+  val execRootIndex = realPath.indexOfFirst { it.pathString == "execroot" }
+  if (execRootIndex <= 0) {
+    error("Unable to find 'execroot' directory in the path: $realPath. class output: url=$url, path=$path")
+  }
+
+  val outputRoot = realPath.root.resolve(realPath.subpath(0, execRootIndex))
+  Span.current().addEvent("Bazel output root: $outputRoot")
+  return@lazy outputRoot
 }
 
 val CompilationContextImpl.asBazelIfNeeded: CompilationContext

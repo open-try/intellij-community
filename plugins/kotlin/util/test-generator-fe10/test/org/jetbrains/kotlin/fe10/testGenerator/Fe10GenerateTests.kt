@@ -118,7 +118,7 @@ import org.jetbrains.kotlin.idea.resolve.*
 import org.jetbrains.kotlin.idea.scratch.AbstractScratchLineMarkersTest
 import org.jetbrains.kotlin.idea.scratch.AbstractScratchRunActionTest
 import org.jetbrains.kotlin.idea.script.*
-import org.jetbrains.kotlin.idea.search.refIndex.AbstractFindUsagesWithCompilerReferenceIndexTest
+import org.jetbrains.kotlin.idea.search.refIndex.AbstractK1FindUsagesWithCompilerReferenceIndexTest
 import org.jetbrains.kotlin.idea.search.refIndex.AbstractKotlinCompilerReferenceByReferenceTest
 import org.jetbrains.kotlin.idea.search.refIndex.AbstractKotlinCompilerReferenceTest
 import org.jetbrains.kotlin.idea.slicer.AbstractSlicerLeafGroupingTest
@@ -425,7 +425,7 @@ private fun assembleWorkspace(): TWorkspace = workspace(KotlinPluginMode.K1) {
             model("kotlinAndJavaChecker/javaAgainstKotlin")
         }
 
-        testClass<AbstractHighlightingTest>(commonSuite = false) {
+        testClass<AbstractK1HighlightingTest>(commonSuite = false) {
             model("highlighter", pattern = KT_OR_JAVA)
         }
 
@@ -661,7 +661,7 @@ private fun assembleWorkspace(): TWorkspace = workspace(KotlinPluginMode.K1) {
             model("inspectionsLocal", pattern = Patterns.forRegex("^(inspections\\.test)$"), flatten = true)
         }
 
-        testClass<AbstractLocalInspectionTest> {
+        testClass<AbstractK1LocalInspectionTest>(generatedClassName = "org.jetbrains.kotlin.idea.inspections.LocalInspectionTestGenerated") {
             model(
                 "inspectionsLocal", pattern = Patterns.forRegex("^([\\w\\-_]+)\\.(kt|kts)$"),
                 excludedDirectories = listOf(
@@ -674,6 +674,7 @@ private fun assembleWorkspace(): TWorkspace = workspace(KotlinPluginMode.K1) {
                     "orInWhenGuard", // K2-only
                     "convertFromMultiDollarToRegularString", // K2-only
                     "javaCollectionsWithNullableTypes", // K2-only
+                    "kdocResolutionResultHasChanged", // K2-only
                 )
             )
         }
@@ -838,37 +839,37 @@ private fun assembleWorkspace(): TWorkspace = workspace(KotlinPluginMode.K1) {
     }
 
     testGroup("idea/tests", category = FIND_USAGES) {
-        testClass<AbstractFindUsagesTest> {
+        testClass<AbstractK1FindUsagesTest>(generatedClassName = "org.jetbrains.kotlin.findUsages.FindUsagesTestGenerated") {
             model("findUsages/kotlin", pattern = Patterns.forRegex("""^(.+)\.0\.kt$"""))
             model("findUsages/java", pattern = Patterns.forRegex("""^(.+)\.0\.java$"""))
             model("findUsages/propertyFiles", pattern = Patterns.forRegex("""^(.+)\.0\.properties$"""))
         }
 
-        testClass<AbstractFindUsagesMultiModuleTest> {
+        testClass<AbstractK1FindUsagesMultiModuleTest>(generatedClassName = "org.jetbrains.kotlin.findUsages.FindUsagesMultiModuleTestGenerated") {
             model("multiModuleFindUsages", isRecursive = false, pattern = DIRECTORY)
         }
 
-        testClass<AbstractKotlinScriptFindUsagesTest> {
+        testClass<AbstractK1KotlinScriptFindUsagesTest>(generatedClassName = "org.jetbrains.kotlin.findUsages.KotlinScriptFindUsagesTestGenerated") {
             model("findUsages/kotlinScript", pattern = Patterns.forRegex("""^(.+)\.0\.kts$"""))
         }
 
-        testClass<AbstractFindUsagesWithDisableComponentSearchTest> {
+        testClass<AbstractK1FindUsagesWithDisableComponentSearchTest>(generatedClassName = "org.jetbrains.kotlin.findUsages.FindUsagesWithDisableComponentSearchTestGenerated") {
             model("findUsages/kotlin/conventions/components", pattern = Patterns.forRegex("""^(.+)\.0\.(kt|kts)$"""))
         }
 
-        testClass<AbstractKotlinFindUsagesWithLibraryTest> {
+        testClass<AbstractK1KotlinFindUsagesWithLibraryTest>(generatedClassName = "org.jetbrains.kotlin.findUsages.KotlinFindUsagesWithLibraryTestGenerated") {
             model("findUsages/libraryUsages", pattern = Patterns.forRegex("""^(.+)\.0\.(kt|java)$"""))
         }
 
-        testClass<AbstractKotlinFindUsagesWithStdlibTest> {
+        testClass<AbstractK1KotlinFindUsagesWithStdlibTest>(generatedClassName = "org.jetbrains.kotlin.findUsages.KotlinFindUsagesWithStdlibTestGenerated") {
             model("findUsages/stdlibUsages", pattern = Patterns.forRegex("""^(.+)\.0\.kt$"""))
         }
 
-        testClass<AbstractKotlinGroupUsagesBySimilarityTest> {
+        testClass<AbstractK1KotlinGroupUsagesBySimilarityTest>(generatedClassName = "org.jetbrains.kotlin.findUsages.KotlinGroupUsagesBySimilarityTestGenerated") {
             model("findUsages/similarity/grouping", pattern = KT)
         }
 
-        testClass<AbstractKotlinGroupUsagesBySimilarityFeaturesTest> {
+        testClass<AbstractK1KotlinGroupUsagesBySimilarityFeaturesTest>(generatedClassName = "org.jetbrains.kotlin.findUsages.KotlinGroupUsagesBySimilarityFeaturesTestGenerated") {
             model("findUsages/similarity/features", pattern = KT)
         }
     }
@@ -1249,7 +1250,8 @@ private fun assembleWorkspace(): TWorkspace = workspace(KotlinPluginMode.K1) {
     testGroup("scripting-support", category = SCRIPTS) {
         testClass<AbstractScratchRunActionTest> {
             model("scratch", pattern = KTS, testMethodName = "doScratchCompilingTest", testClassName = "ScratchCompiling", isRecursive = false)
-            model("scratch", pattern = KTS, testMethodName = "doScratchReplTest", testClassName = "ScratchRepl", isRecursive = false)
+            // TODO: uncomment once KTIJ-33711 fixed
+//            model("scratch", pattern = KTS, testMethodName = "doScratchReplTest", testClassName = "ScratchRepl", isRecursive = false)
             model("scratch/multiFile", pattern = DIRECTORY, testMethodName = "doScratchMultiFileTest", testClassName = "ScratchMultiFile", isRecursive = false)
             model("scratch/rightPanelOutput", pattern = KTS, testMethodName = "doRightPreviewPanelOutputTest", testClassName = "ScratchRightPanelOutput", isRecursive = false)
         }
@@ -1538,7 +1540,7 @@ private fun assembleWorkspace(): TWorkspace = workspace(KotlinPluginMode.K1) {
     }
 
     testGroup("compiler-reference-index/tests", testDataPath = "../../idea/tests/testData") {
-        testClass<AbstractFindUsagesWithCompilerReferenceIndexTest> {
+        testClass<AbstractK1FindUsagesWithCompilerReferenceIndexTest>(generatedClassName = "org.jetbrains.kotlin.idea.search.refIndex.FindUsagesWithCompilerReferenceIndexTestGenerated") {
             model("findUsages/kotlin", pattern = Patterns.forRegex("""^(.+)\.0\.kt$"""), classPerTest = true)
             model("findUsages/java", pattern = Patterns.forRegex("""^(.+)\.0\.java$"""), classPerTest = true)
             model("findUsages/propertyFiles", pattern = Patterns.forRegex("""^(.+)\.0\.properties$"""), classPerTest = true)

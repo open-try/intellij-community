@@ -25,7 +25,6 @@ import com.intellij.xdebugger.impl.breakpoints.XBreakpointBase
 import com.intellij.xdebugger.impl.rpc.models.findValue
 import com.intellij.xdebugger.impl.rpc.models.storeGlobally
 import com.intellij.xdebugger.impl.rpc.toRpc
-import com.intellij.xdebugger.impl.settings.XDebuggerSettingManagerImpl
 import fleet.rpc.core.toRpc
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
@@ -300,3 +299,4 @@ internal fun XDebuggerEditorsProvider.toRpc(cs: CoroutineScope): XDebuggerEditor
   val id = storeGlobally(cs)
   return XDebuggerEditorsProviderDto(id, fileType.name, this)
 }
+

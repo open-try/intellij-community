@@ -235,8 +235,26 @@ public abstract class AbstractProjectViewPane implements UiCompatibleDataProvide
     }
   }
 
+  /**
+   * Refreshes the entire tree asynchronously.
+   * <p>
+   *   Note: this method is for plugin developers only. For internal use,
+   *   call {@link #updateFromRoot(boolean, ProjectViewUpdateCause)} and specify the update cause explicitly.
+   * </p>
+   * @param restoreExpandedPaths determines whether the currently expanded paths should be preserved after refresh if possible
+   * @return a callback that will be invoked when the refresh is done
+   */
   public abstract @NotNull ActionCallback updateFromRoot(boolean restoreExpandedPaths);
 
+  /**
+   * Refreshes the specified node asynchronously.
+   * <p>
+   *   Note: this method is for plugin developers only. For internal use,
+   *   call {@link #updateFrom(Object, boolean, boolean, ProjectViewUpdateCause)} and specify the update cause explicitly.
+   * </p>
+   * @param forceResort not used, kept for compatibility reasons
+   * @param updateStructure if {@code true}, then all children are updated recursively as well
+   */
   public void updateFrom(Object element, boolean forceResort, boolean updateStructure) {
     updateFrom(element, forceResort, updateStructure, guessProjectViewUpdateCauseByCaller(AbstractProjectViewPane.class));
   }
@@ -339,6 +357,11 @@ public abstract class AbstractProjectViewPane implements UiCompatibleDataProvide
     return false;
   }
 
+  @ApiStatus.Internal
+  protected Navigatable @NotNull [] getCachedNavigatablesFromSelectedPaths(TreePath @NotNull [] paths) {
+    return Navigatable.EMPTY_NAVIGATABLE_ARRAY;
+  }
+
   @Override
   public void uiDataSnapshot(@NotNull DataSink sink) {
     TreePath[] paths = getSelectionPaths();
@@ -364,6 +387,8 @@ public abstract class AbstractProjectViewPane implements UiCompatibleDataProvide
           navigatables.add(new CachedNodeNavigatable(myProject, o));
         }
       }
+      Navigatable[] cachedNavigatables = getCachedNavigatablesFromSelectedPaths(paths);
+      navigatables.addAll(Arrays.asList(cachedNavigatables));
       sink.set(CommonDataKeys.NAVIGATABLE_ARRAY,
                navigatables.isEmpty() ? null : navigatables.toArray(Navigatable.EMPTY_NAVIGATABLE_ARRAY));
     }

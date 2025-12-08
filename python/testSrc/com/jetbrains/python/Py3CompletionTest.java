@@ -183,7 +183,9 @@ public class Py3CompletionTest extends PyTestCase {
   }
 
   public void testAsync() {
-    doTest();
+    List<String> suggested = doTestByText("asy<caret>");
+    assertNotNull(suggested);
+    assertContainsElements(suggested, "async", "async def", "async with", "async for");
   }
 
   public void testAwait() {
@@ -580,7 +582,7 @@ public class Py3CompletionTest extends PyTestCase {
 
   // PY-46056
   public void testImportCompletionHintForSameDirectoryModuleInPlainDirectory() {
-    doTestVariantTypeText("plainDirectory/sample.py", "logging1", "plainDirectory");
+    doTestVariantTypeText("plainDirectory/sample.py", "logging", "plainDirectory");
   }
 
   // PY-46056
@@ -590,7 +592,7 @@ public class Py3CompletionTest extends PyTestCase {
 
   // PY-46056
   public void testFromImportCompletionHintForSameDirectoryModuleInPlainDirectory() {
-    doTestVariantTypeText("plainDirectory/sample.py", "logging1", "plainDirectory");
+    doTestVariantTypeText("plainDirectory/sample.py", "logging", "plainDirectory");
   }
 
   private void doTestVariantTypeText(@NotNull String entryFilePath, @NotNull String variantName, @Nullable String typeText) {
@@ -600,7 +602,8 @@ public class Py3CompletionTest extends PyTestCase {
     assertNotNull(variants);
     LookupElement lookupElement = ContainerUtil.find(variants, v -> v.getLookupString().equals(variantName));
     assertNotNull(lookupElement);
-    LookupElementPresentation presentation = TestLookupElementPresentation.renderElement(lookupElement);
+    LookupElementPresentation presentation = LookupElementPresentation.renderElement(lookupElement);
+    //noinspection unchecked
     LookupElementRenderer<LookupElement> expensiveRenderer = (LookupElementRenderer<LookupElement>)lookupElement.getExpensiveRenderer();
     if (expensiveRenderer != null) {
       expensiveRenderer.renderElement(lookupElement, presentation);

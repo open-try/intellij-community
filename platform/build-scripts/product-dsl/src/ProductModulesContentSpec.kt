@@ -1,9 +1,20 @@
 // Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
+
+/**
+ * Programmatic content DSL for defining product module content in Kotlin instead of static XML.
+ *
+ * This file contains the core types for the programmatic content system, which allows products
+ * to define their module composition, XML includes, and module sets using type-safe Kotlin code.
+ *
+ * For comprehensive documentation on how to use this system:
+ * @see <a href="../programmatic-content.md">Programmatic Content Documentation</a> - Complete guide with examples
+ * @see <a href="../module-sets.md">Module Sets Documentation</a> - How module sets work and best practices
+ */
 @file:Suppress("ReplacePutWithAssignment")
 
 package org.jetbrains.intellij.build.productLayout
 
-import com.intellij.platform.plugins.parser.impl.elements.ModuleLoadingRule
+import com.intellij.platform.plugins.parser.impl.elements.ModuleLoadingRuleValue
 import kotlinx.serialization.Serializable
 
 /**
@@ -122,6 +133,13 @@ class ProductModulesContentSpec(
    */
   @JvmField val additionalModules: List<ContentModule>,
 
+  /**
+   * List of bundled plugin module names for dependency generation.
+   * These are JPS modules that contain META-INF/plugin.xml.
+   * Used ONLY for automatic dependency generation in plugin.xml files,
+   * not for determining which plugins are bundled (that's done via productLayout.bundledPluginModules).
+   */
+  @JvmField val bundledPlugins: List<String> = emptyList(),
 
   /**
    * Composition graph tracking how this spec was assembled.
@@ -147,6 +165,7 @@ class ProductModulesContentSpecBuilder @PublishedApi internal constructor() {
   private val xmlIncludes = mutableListOf<DeprecatedXmlInclude>()
   private val moduleSets = mutableListOf<ModuleSetWithOverrides>()
   private val additionalModules = mutableListOf<ContentModule>()
+  private val bundledPlugins = mutableListOf<String>()
 
   // Composition tracking
   private val compositionGraph = mutableListOf<SpecComposition>()
@@ -272,7 +291,7 @@ class ProductModulesContentSpecBuilder @PublishedApi internal constructor() {
   }
 
   @PublishedApi
-  internal fun addModuleSet(set: ModuleSet, overrides: Map<String, ModuleLoadingRule>) {
+  internal fun addModuleSet(set: ModuleSet, overrides: Map<String, ModuleLoadingRuleValue>) {
     moduleSets.add(ModuleSetWithOverrides(set, overrides))
     compositionGraph.add(SpecComposition(
       type = CompositionType.MODULE_SET_REF,
@@ -285,7 +304,7 @@ class ProductModulesContentSpecBuilder @PublishedApi internal constructor() {
   /**
    * Add an individual module to additionalModules.
    */
-  fun module(name: String, loading: ModuleLoadingRule? = null) {
+  fun module(name: String, loading: ModuleLoadingRuleValue? = null) {
     additionalModules.add(ContentModule(name, loading))
     compositionGraph.add(SpecComposition(
       type = CompositionType.DIRECT_MODULE,
@@ -299,7 +318,7 @@ class ProductModulesContentSpecBuilder @PublishedApi internal constructor() {
    * Add an individual module with EMBEDDED loading to additionalModules.
    */
   fun embeddedModule(name: String) {
-    additionalModules.add(ContentModule(name, ModuleLoadingRule.EMBEDDED))
+    additionalModules.add(ContentModule(name, ModuleLoadingRuleValue.EMBEDDED))
     compositionGraph.add(SpecComposition(
       type = CompositionType.DIRECT_MODULE,
       reference = name,
@@ -312,13 +331,24 @@ class ProductModulesContentSpecBuilder @PublishedApi internal constructor() {
    * Add an individual module with REQUIRED loading to additionalModules.
    */
   fun requiredModule(name: String) {
-    additionalModules.add(ContentModule(name, ModuleLoadingRule.REQUIRED))
+    additionalModules.add(ContentModule(name, ModuleLoadingRuleValue.REQUIRED))
     compositionGraph.add(SpecComposition(
       type = CompositionType.DIRECT_MODULE,
       reference = name,
       path = java.util.List.copyOf(pathStack),
       sourceLocation = null,
     ))
+  }
+
+  /**
+   * Add bundled plugin modules for automatic dependency generation.
+   * These are JPS modules that contain META-INF/plugin.xml.
+   * The generator will update the `<dependencies>` section in each plugin.xml.
+   *
+   * @param pluginModules List of JPS module names containing META-INF/plugin.xml
+   */
+  fun bundledPlugins(pluginModules: List<String>) {
+    bundledPlugins.addAll(pluginModules)
   }
 
   @PublishedApi
@@ -329,6 +359,7 @@ class ProductModulesContentSpecBuilder @PublishedApi internal constructor() {
       deprecatedXmlIncludes = java.util.List.copyOf(xmlIncludes),
       moduleSets = java.util.List.copyOf(moduleSets),
       additionalModules = java.util.List.copyOf(additionalModules),
+      bundledPlugins = java.util.List.copyOf(bundledPlugins),
       compositionGraph = java.util.List.copyOf(compositionGraph),
       metadata = metadata,
     )

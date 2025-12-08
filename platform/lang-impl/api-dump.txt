@@ -296,6 +296,7 @@ f:com.intellij.codeInsight.intention.impl.IntentionActionWithTextCaching
 - isSelectable():Z
 - isShowIcon():Z
 - suggestionShown(com.intellij.openapi.project.Project,com.intellij.openapi.editor.Editor,com.intellij.psi.PsiFile):V
+c:com.intellij.codeInsight.intention.impl.IntentionListStep
 com.intellij.codeInsight.intention.impl.IntentionsOrderProvider
 - sf:EXTENSION:com.intellij.lang.LanguageExtension
 - a:getSortedIntentions(com.intellij.codeInsight.intention.impl.CachedIntentions,java.util.List):java.util.List
@@ -881,7 +882,6 @@ com.intellij.openapi.roots.ui.configuration.SdkLookupBuilder
 - a:withLookupReason(java.lang.String):com.intellij.openapi.roots.ui.configuration.SdkLookupBuilder
 - a:withProgressIndicator(com.intellij.openapi.progress.ProgressIndicator):com.intellij.openapi.roots.ui.configuration.SdkLookupBuilder
 - a:withProgressMessageTitle(java.lang.String):com.intellij.openapi.roots.ui.configuration.SdkLookupBuilder
-- a:withProject(com.intellij.openapi.project.Project):com.intellij.openapi.roots.ui.configuration.SdkLookupBuilder
 - a:withSdkHomeFilter(kotlin.jvm.functions.Function1):com.intellij.openapi.roots.ui.configuration.SdkLookupBuilder
 - a:withSdkName(java.lang.String):com.intellij.openapi.roots.ui.configuration.SdkLookupBuilder
 - a:withSdkType(com.intellij.openapi.projectRoots.SdkType):com.intellij.openapi.roots.ui.configuration.SdkLookupBuilder

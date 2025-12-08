@@ -6,10 +6,8 @@ import com.intellij.openapi.module.Module
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.project.guessModuleDir
 import com.intellij.openapi.project.modules
-import com.intellij.openapi.roots.ModuleRootManager
 import com.intellij.openapi.roots.ModuleRootModificationUtil
 import com.intellij.openapi.util.Key
-import com.intellij.openapi.util.registry.Registry
 import com.intellij.openapi.util.removeUserData
 import com.intellij.platform.ide.progress.withBackgroundProgress
 import com.intellij.python.common.tools.ToolId
@@ -25,14 +23,13 @@ import com.jetbrains.python.sdk.configuration.CreateSdkInfo
 import com.jetbrains.python.sdk.configuration.CreateSdkInfoWithTool
 import com.jetbrains.python.sdk.configuration.PyProjectSdkConfigurationExtension
 import com.jetbrains.python.sdk.getOrCreateAdditionalData
+import com.jetbrains.python.sdk.legacy.PythonSdkUtil
 import com.jetbrains.python.sdk.setAssociationToPath
 import com.jetbrains.python.venvReader.Directory
 import kotlinx.collections.immutable.toPersistentList
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 
 /**
@@ -106,14 +103,11 @@ internal class ModulesSdkConfigurator private constructor(
 
     private suspend fun getModulesWithoutSDKCreateInfo(project: Project): Map<ModuleName, ModuleCreateInfo> = withBackgroundProgress(project, PySdkConfiguratorBundle.message("intellij.python.sdk.looking")) {
       val tools = PyProjectSdkConfigurationExtension.createMap()
-      val limit = Semaphore(permits = Registry.intValue("intellij.python.sdkConfigurator.backend.sdk.parallel"))
       val now = System.currentTimeMillis()
-      val resultDef = project.modules.filter { ModuleRootManager.getInstance(it).sdk == null }.map { module ->
-        limit.withPermit {
-          async {
-            val moduleInfo = getModuleInfo(module, tools) ?: return@async null
-            Pair(module, moduleInfo)
-          }
+      val resultDef = project.modules.filter { PythonSdkUtil.findPythonSdk(it) == null }.map { module ->
+        async {
+          val moduleInfo = getModuleInfo(module, tools) ?: return@async null
+          Pair(module, moduleInfo)
         }
       }
       val result = resultDef.awaitAll().filterNotNull()
@@ -190,7 +184,7 @@ internal class ModulesSdkConfigurator private constructor(
         } // Link workspace members with their workspace
         val reportedBrokenModules = mutableSetOf<Module>()
         for ((module, parentModule) in modulesWithSameSdk) {
-          val parentSdk = ModuleRootManager.getInstance(parentModule).sdk
+          val parentSdk = PythonSdkUtil.findPythonSdk(module)
           if (parentSdk != null) {
             ModuleRootModificationUtil.setModuleSdk(module, parentSdk) // This SDK is shared, no need to associate it
             // TODO: Support association with multiple modules

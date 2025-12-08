@@ -22,6 +22,7 @@ import com.intellij.openapi.util.TextRange
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiElement
 import com.intellij.psi.impl.PsiDocumentManagerBase
+import com.intellij.psi.impl.PsiDocumentManagerEx
 import com.intellij.psi.xml.XmlAttributeValue
 import com.intellij.psi.xml.XmlElement
 import com.intellij.psi.xml.XmlFile
@@ -41,7 +42,7 @@ class MavenModelVersionSyncronizerImpl(
   }
 
   private var applying = false
-  private val pdm = PsiDocumentManager.getInstance(project) as PsiDocumentManagerBase
+  private val pdm = PsiDocumentManager.getInstance(project) as PsiDocumentManagerEx
 
   fun listenForDocumentChanges() {
     Disposer.register(editor.disposable, this)
@@ -134,11 +135,9 @@ class MavenModelVersionSyncronizerImpl(
   private fun createLeaderMarker(psiFile: XmlFile, document: Document, offset: Int): SynchronizationData? {
     val projectElement = psiFile.rootTag
     val xmlnsElement = projectElement?.getAttribute("xmlns")?.valueElement
-    val schemaElement = projectElement?.getAttribute("xsi:schemaLocation")?.valueElement
     val modelElement = projectElement?.findSubTags("modelVersion")?.firstOrNull()?.children?.filterIsInstance<XmlText>()?.first()
     if (xmlnsElement?.textRange?.contains(offset) == true) return fromXmlns(xmlnsElement, document)
     if (modelElement?.textRange?.contains(offset) == true) return fromModel(modelElement, document)
-    if (schemaElement?.textRange?.contains(offset) == true) return fromSchema(schemaElement, document)?.firstOrNull { it.rangeMarker.contains(offset) }
     return null
   }
 

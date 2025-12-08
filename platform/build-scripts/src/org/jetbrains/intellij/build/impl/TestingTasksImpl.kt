@@ -47,7 +47,6 @@ import org.jetbrains.jps.incremental.java.ModulePathSplitter
 import org.jetbrains.jps.model.java.JpsJavaClasspathKind
 import org.jetbrains.jps.model.java.JpsJavaExtensionService
 import org.jetbrains.jps.model.java.JpsJavaSdkType
-import org.jetbrains.jps.model.library.JpsOrderRootType
 import org.jetbrains.jps.util.JpsPathUtil
 import java.io.File
 import java.io.PrintStream
@@ -77,7 +76,12 @@ internal class TestingTasksImpl(context: CompilationContext, private val options
   override val coverage: Coverage by lazy {
     CoverageImpl(
       context = this.context,
-      coveredModuleNames = runConfigurations
+      coveredModuleNames = options.coveredModuleNames
+                             ?.splitToSequence(';')
+                             ?.map { it.trim() }
+                             ?.toList()
+                             ?.takeIf { it.any() }
+                           ?: runConfigurations
                              .map { it.moduleName }
                              .takeIf { it.any() }
                            ?: listOfNotNull(options.mainModule),
@@ -379,10 +383,7 @@ internal class TestingTasksImpl(context: CompilationContext, private val options
 
   private fun loadTestDiscovery(additionalJvmOptions: MutableList<String>, systemProperties: MutableMap<String, String>) {
     val testDiscovery = "intellij-test-discovery"
-    val library = context.projectModel.project.libraryCollection.findLibrary(testDiscovery)
-                  ?: throw RuntimeException("Can't find the $testDiscovery library, but test discovery capturing enabled.")
-
-    val agentJar = library.getPaths(JpsOrderRootType.COMPILED)
+    val agentJar = context.findLibraryRoots(testDiscovery, moduleLibraryModuleName = null)
                      .firstOrNull {
                        val name = it.fileName.toString()
                        name.startsWith("intellij-test-discovery") && name.endsWith(".jar")
@@ -461,12 +462,16 @@ internal class TestingTasksImpl(context: CompilationContext, private val options
     val useKotlinK2 = !System.getProperty("idea.kotlin.plugin.use.k1", "false").toBoolean() ||
                       jvmArgs.contains("-Didea.kotlin.plugin.use.k1=false")
     val mainJpsModule = context.findRequiredModule(mainModule)
-    val testRoots = JpsJavaExtensionService.dependencies(mainJpsModule).recursively()
-      .withoutSdk()  // if the project requires different SDKs, they all shouldn't be added to the test classpath
-      .includedIn(JpsJavaClasspathKind.runtime(true))
-      .classes()
-      .roots
-      .filterTo(mutableListOf()) { useKotlinK2 || it.name != "kotlin.plugin.k2" }
+    val testRoots = context.getModuleRuntimeClasspath(mainJpsModule, forTests = true)
+      .map(Path::toFile)
+      .toMutableList()
+      .apply {
+        if (!useKotlinK2) {
+          val kotlinPluginK2Module = context.findRequiredModule("kotlin.plugin.k2")
+          removeAll(context.getModuleOutputRoots(kotlinPluginK2Module, forTests = false).map(Path::toFile))
+          removeAll(context.getModuleOutputRoots(kotlinPluginK2Module, forTests = true).map(Path::toFile))
+        }
+      }
 
     if (isBootstrapSuiteDefault && !isRunningInBatchMode) {
       //module with "com.intellij.TestAll" which output should be found in `testClasspath + modulePath`
@@ -476,7 +481,7 @@ internal class TestingTasksImpl(context: CompilationContext, private val options
         .map(Path::toFile)
       for (testFrameworkOutput in testFrameworkCoreModuleOutputRoots) {
         if (!testRoots.contains(testFrameworkOutput)) {
-          testRoots.addAll(context.getModuleRuntimeClasspath(testFrameworkCoreModule, false).map(::File))
+          testRoots.addAll(context.getModuleRuntimeClasspath(testFrameworkCoreModule, false).map { it.toFile() } )
         }
       }
     }
@@ -498,7 +503,8 @@ internal class TestingTasksImpl(context: CompilationContext, private val options
     }
 
     val devBuildServerSettings = DevBuildServerSettings.readDevBuildServerSettingsFromIntellijYaml(mainModule)
-    val bootstrapClasspath = context.getModuleRuntimeClasspath(module = context.findRequiredModule("intellij.tools.testsBootstrap"), forTests = false).toMutableList()
+    val bootstrapClasspath = context.getModuleRuntimeClasspath(module = context.findRequiredModule("intellij.tools.testsBootstrap"), forTests = false)
+      .mapTo(mutableListOf()) { it.toString() }
     val classpathFile = context.paths.tempDir.resolve("junit.classpath")
     Files.createDirectories(classpathFile.parent)
     // this is required to collect tests both on class and module paths
@@ -513,7 +519,7 @@ internal class TestingTasksImpl(context: CompilationContext, private val options
     systemProperties.putIfAbsent(TestingTasks.BOOTSTRAP_TESTCASES_PROPERTY, "com.intellij.AllTests")
     systemProperties.putIfAbsent(TestingOptions.PERFORMANCE_TESTS_ONLY_FLAG, options.isPerformanceTestsOnly.toString())
     val allJvmArgs = ArrayList(jvmArgs)
-    prepareEnvForTestRun(allJvmArgs, systemProperties, bootstrapClasspath, remoteDebugging)
+    prepareEnvForTestRun(jvmArgs = allJvmArgs, systemProperties = systemProperties, classPath = bootstrapClasspath, remoteDebugging = remoteDebugging)
     val messages = context.messages
     if (isRunningInBatchMode) {
       messages.info("Running tests from $mainModule matched by '${options.batchTestIncludes}' pattern.")
@@ -778,7 +784,6 @@ internal class TestingTasksImpl(context: CompilationContext, private val options
     val classpath = context.project.modules
       .flatMap { context.getModuleRuntimeClasspath(module = it, forTests = true) }
       .distinct()
-      .map { Path.of(it) }
     val classloader = UrlClassLoader.build().files(classpath).get()
     val testAnnotation = classloader.loadClass("com.intellij.testFramework.SkipInHeadlessEnvironment")
 
@@ -1247,6 +1252,7 @@ internal class TestingTasksImpl(context: CompilationContext, private val options
       val bootClasspath = context.getModuleRuntimeClasspath(module = context.findRequiredModule(IJENT_BOOT_CLASSPATH_MODULE), forTests = false)
       val classpath = context.getModuleRuntimeClasspath(module = context.findRequiredModule(devBuildSettings.mainClassModule), forTests = false)
         .filter { !bootClasspath.contains(it) }
+        .map { it.toString() }
 
       val messages = context.messages
       messages.info("Effective main module: $mainModule")
@@ -1376,8 +1382,8 @@ internal class TestingTasksImpl(context: CompilationContext, private val options
 
 private fun appendJUnitStarter(path: MutableList<String>, context: CompilationContext) {
   for (libName in listOf("JUnit5", "JUnit5Launcher", "JUnit5Vintage", "JUnit5Jupiter")) {
-    for (library in context.projectModel.project.libraryCollection.findLibrary(libName)!!.getFiles(JpsOrderRootType.COMPILED)) {
-      path.add(library.absolutePath)
+    for (library in context.findLibraryRoots(libName)) {
+      path.add(library.pathString)
     }
   }
 }

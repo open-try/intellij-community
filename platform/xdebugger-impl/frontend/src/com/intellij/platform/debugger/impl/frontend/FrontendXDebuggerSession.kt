@@ -14,12 +14,13 @@ import com.intellij.openapi.application.EDT
 import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.project.Project
 import com.intellij.platform.debugger.impl.frontend.evaluate.quick.FrontendXValue
-import com.intellij.platform.debugger.impl.frontend.frame.FrontendDropFrameHandler
-import com.intellij.platform.debugger.impl.frontend.frame.FrontendXExecutionStack
-import com.intellij.platform.debugger.impl.frontend.frame.FrontendXStackFrame
-import com.intellij.platform.debugger.impl.frontend.frame.FrontendXSuspendContext
+import com.intellij.platform.debugger.impl.frontend.frame.*
 import com.intellij.platform.debugger.impl.frontend.storage.getOrCreateStackFrame
 import com.intellij.platform.debugger.impl.rpc.*
+import com.intellij.platform.debugger.impl.shared.proxy.XBreakpointProxy
+import com.intellij.platform.debugger.impl.shared.proxy.XDebugSessionProxy
+import com.intellij.platform.debugger.impl.shared.proxy.XSmartStepIntoHandlerEntry
+import com.intellij.platform.debugger.impl.shared.proxy.XStackFramesListColorsCache
 import com.intellij.platform.execution.impl.frontend.createFrontendProcessHandler
 import com.intellij.platform.execution.impl.frontend.executionEnvironment
 import com.intellij.platform.util.coroutines.childScope
@@ -36,10 +37,10 @@ import com.intellij.xdebugger.frame.XExecutionStack
 import com.intellij.xdebugger.frame.XStackFrame
 import com.intellij.xdebugger.frame.XSuspendContext
 import com.intellij.xdebugger.impl.XSourceKind
-import com.intellij.xdebugger.impl.breakpoints.XBreakpointProxy
-import com.intellij.xdebugger.impl.frame.*
+import com.intellij.xdebugger.impl.frame.XValueMarkers
 import com.intellij.xdebugger.impl.inline.DebuggerInlayListener
-import com.intellij.xdebugger.impl.rpc.*
+import com.intellij.xdebugger.impl.rpc.sourcePosition
+import com.intellij.xdebugger.impl.rpc.toRpc
 import com.intellij.xdebugger.impl.ui.SplitDebuggerUIUtil
 import com.intellij.xdebugger.impl.ui.XDebugSessionData
 import com.intellij.xdebugger.impl.ui.XDebugSessionTab
@@ -51,7 +52,6 @@ import kotlinx.coroutines.channels.ClosedSendChannelException
 import kotlinx.coroutines.flow.*
 import org.jetbrains.annotations.ApiStatus
 import org.jetbrains.annotations.VisibleForTesting
-import java.awt.Color
 import java.util.concurrent.atomic.AtomicReference
 import javax.swing.event.HyperlinkListener
 import kotlin.time.Duration.Companion.seconds
@@ -155,11 +155,11 @@ class FrontendXDebuggerSession private constructor(
   override val sessionTab: XDebugSessionTab?
     get() = if (sessionTabDeferred.isCompleted) sessionTabDeferred.getCompleted() else null
 
-  override val sessionTabWhenInitialized: Deferred<XDebugSessionTab>
+  override val sessionTabWhenInitialized: Deferred<XDebugSessionTab?>
     get() = sessionTabDeferred
 
   override val sessionName: String = sessionDto.sessionName
-  override val sessionData: XDebugSessionData = FrontendXDebugSessionData(project, sessionDto.sessionDataDto, tabScope, sessionStateFlow)
+  override val sessionData: XDebugSessionData = FrontendXDebugSessionData(sessionDto.sessionDataDto, tabScope, sessionStateFlow)
 
   override val restartActions: List<AnAction>
     get() = sessionDto.restartActions.mapNotNull { it.action() }
@@ -191,6 +191,8 @@ class FrontendXDebuggerSession private constructor(
     get() = activeNonLineBreakpoint
 
   private val dropFrameHandler = FrontendDropFrameHandler(id, scope)
+
+  private var tabLayouter: XDebugTabLayouter? = null
 
   init {
     DebuggerInlayListener.getInstance(project).startListening()
@@ -319,6 +321,9 @@ class FrontendXDebuggerSession private constructor(
   private suspend fun initTabInfo(tabDto: XDebuggerSessionTabDto) {
     val (tabInfo, pausedFlow) = tabDto
     if (tabInfo !is XDebuggerSessionTabInfo) return
+
+    val layouterDto = tabInfo.tabLayouterDto.await()
+    tabLayouter = createLayouter(layouterDto, tabScope)
     val backendRunContentDescriptorId = tabInfo.backendRunContendDescriptorId.await()
     val executionEnvironmentId = tabInfo.executionEnvironmentId
 
@@ -430,16 +435,22 @@ class FrontendXDebuggerSession private constructor(
     return currentContext.isStepping
   }
 
-  override fun computeExecutionStacks(provideContainer: () -> XSuspendContext.XExecutionStackContainer) {
-    getCurrentSuspendContext()?.computeExecutionStacks(provideContainer())
+  override fun computeExecutionStacks(container: XSuspendContext.XExecutionStackContainer) {
+    getCurrentSuspendContext()?.computeExecutionStacks(container)
+  }
+
+  override fun computeRunningExecutionStacks(container: XSuspendContext.XExecutionStackContainer) {
+    coroutineScope.launch {
+      XDebugSessionApi.getInstance()
+        .computeRunningExecutionStacks(id)
+        .collectExecutionStackEvents(project, coroutineScope, container)
+    }
   }
 
   private fun getCurrentSuspendContext() = suspendContext.get()
 
   override fun createTabLayouter(): XDebugTabLayouter {
-    // Additional tabs are not supported in RemDev
-    val monolithLayouter = XDebugMonolithUtils.findSessionById(id)?.debugProcess?.createTabLayouter()
-    return monolithLayouter ?: object : XDebugTabLayouter() {} // TODO support additional tabs in RemDev
+    return tabLayouter ?: error("Tab layouter is accessed before tab initialization")
   }
 
   override fun addSessionListener(listener: XDebugSessionListener, disposable: Disposable) {
@@ -469,13 +480,11 @@ class FrontendXDebuggerSession private constructor(
     }
   }
 
-  override fun createFileColorsCache(framesList: XDebuggerFramesList): XStackFramesListColorsCache {
-    return object : XStackFramesListColorsCache(project) {
-      override fun get(stackFrame: XStackFrame): Color? {
-        require(stackFrame is FrontendXStackFrame) { "Expected FrontendXStackFrame, got ${stackFrame::class.java}" }
+  override fun createFileColorsCache(onAllComputed: () -> Unit): XStackFramesListColorsCache {
+    return XStackFramesListColorsCache { stackFrame, _ ->
+      require(stackFrame is FrontendXStackFrame) { "Expected FrontendXStackFrame, got ${stackFrame::class.java}" }
 
-        return stackFrame.backgroundColor
-      }
+      stackFrame.backgroundColor
     }
   }
 
@@ -549,10 +558,10 @@ class FrontendXDebuggerSession private constructor(
  * Note that data added to [com.intellij.openapi.util.UserDataHolder] is not synced with backend.
  */
 private class FrontendXDebugSessionData(
-  project: Project, sessionDataDto: XDebugSessionDataDto,
+  sessionDataDto: XDebugSessionDataDto,
   cs: CoroutineScope,
   sessionStateFlow: StateFlow<XDebugSessionState>,
-) : XDebugSessionData(project, sessionDataDto.configurationName) {
+) : XDebugSessionData(sessionDataDto.configurationName) {
   private val id = sessionDataDto.id
   private val muteBreakpointsBackendSyncFlow = MutableSharedFlow<Boolean>(extraBufferCapacity = 1,
                                                                           onBufferOverflow = BufferOverflow.DROP_OLDEST)

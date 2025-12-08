@@ -3,6 +3,7 @@ package com.intellij.openapi.command.impl
 
 import com.intellij.ide.impl.UndoRemoteBehaviorService
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.command.undo.DocumentReference
 import com.intellij.openapi.command.undo.UndoableAction
 import com.intellij.openapi.components.service
 import com.intellij.openapi.fileEditor.FileEditor
@@ -17,6 +18,18 @@ import org.jetbrains.annotations.ApiStatus
 @ApiStatus.Internal
 interface UndoSpy {
 
+  fun commandBeforeStarted(undoProject: Project?, editor: FileEditor?, originator: DocumentReference?)
+
+  fun commandStarted(cmdEvent: CmdEvent)
+
+  fun undoableActionAdded(undoProject: Project?, action: UndoableAction, type: UndoableActionType)
+
+  fun commandFinished(cmdEvent: CmdEvent)
+
+  fun undoRedoPerformed(project: Project?, editor: FileEditor?, isUndo: Boolean)
+
+  fun <T> withBlind(action: () -> T): T
+
   companion object {
     @JvmStatic
     fun getInstance(): UndoSpy? {
@@ -29,16 +42,15 @@ interface UndoSpy {
         }
       }
     }
+
+    @JvmStatic
+    fun <T> withBlindSpot(action: () -> T): T {
+      val undoSpy = getInstance()
+      return if (undoSpy == null) {
+        action()
+      } else {
+        undoSpy.withBlind(action)
+      }
+    }
   }
-
-  fun commandStarted(cmdEvent: CmdEvent)
-
-  fun undoableActionAdded(undoProject: Project?, action: UndoableAction, type: UndoableActionType)
-
-  fun commandFinished(cmdEvent: CmdEvent)
-
-  fun undoRedoPerformed(project: Project?, editor: FileEditor?, isUndo: Boolean)
-
-  // TODO: sync FE commands instead of flush
-  fun commandMergerFlushed(project: Project?)
 }

@@ -26,8 +26,10 @@ import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.openapi.progress.coroutineToIndicator
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.updateSettings.impl.PluginAutoUpdateService
 import com.intellij.openapi.updateSettings.impl.PluginDownloader
 import com.intellij.openapi.updateSettings.impl.UpdateCheckerFacade
+import com.intellij.openapi.updateSettings.impl.UpdateSettings
 import com.intellij.openapi.updateSettings.impl.pluginsAdvertisement.FUSEventSource
 import com.intellij.openapi.util.BuildNumber
 import com.intellij.openapi.util.Pair
@@ -129,9 +131,10 @@ object DefaultUiPluginManagerController : UiPluginManagerController {
     installSource: FUSEventSource?,
     modalityState: ModalityState?,
     pluginEnabler: PluginEnabler?,
-    customRepoPlugins: List<PluginUiModel>,
+    customRepoPlugins: List<PluginUiModel>?,
   ): InstallPluginResult {
     val session = findSession(sessionId) ?: return InstallPluginResult.FAILED
+    val customPlugins = customRepoPlugins ?: CustomPluginRepositoryService.getInstance().getCustomRepositoryPlugins().toList()
     val pluginEnabler = pluginEnabler ?: SessionStatePluginEnabler(session)
     val context = getContextElement(modalityState)
     return withContext(context) {
@@ -209,8 +212,7 @@ object DefaultUiPluginManagerController : UiPluginManagerController {
                                                         session.needRestart
         )
 
-        return@withContext performInstallOperation(installPluginRequest, parentComponent, modalityState, pluginEnabler, customRepoPlugins)
-
+        return@withContext performInstallOperation(installPluginRequest, parentComponent, modalityState, pluginEnabler, customPlugins)
       }
     }
   }
@@ -223,9 +225,10 @@ object DefaultUiPluginManagerController : UiPluginManagerController {
     pluginEnabler: PluginEnabler?,
     modalityState: ModalityState?,
     parentComponent: JComponent?,
-    customRepoPlugins: List<PluginUiModel>,
+    customRepoPlugins: List<PluginUiModel>?,
   ): InstallPluginResult {
     val session = findSession(sessionId) ?: return InstallPluginResult.FAILED
+    val customPlugins = customRepoPlugins ?: CustomPluginRepositoryService.getInstance().getCustomRepositoryPlugins().toList()
     val pluginEnabler = pluginEnabler ?: SessionStatePluginEnabler(session)
     val installDescriptor = session.installsInProgress.remove(pluginId)
     val updateDescriptor = session.updatesInProgress.remove(pluginId)
@@ -247,7 +250,7 @@ object DefaultUiPluginManagerController : UiPluginManagerController {
                                                     session.needRestart
     )
 
-    return performInstallOperation(installPluginRequest, parentComponent, modalityState, pluginEnabler, customRepoPlugins)
+    return performInstallOperation(installPluginRequest, parentComponent, modalityState, pluginEnabler, customPlugins)
   }
 
   private suspend fun loadDetails(descriptor: PluginUiModel): PluginUiModel? {
@@ -657,6 +660,11 @@ object DefaultUiPluginManagerController : UiPluginManagerController {
 
   override suspend fun isRestartRequired(sessionId: String): Boolean {
     return findSession(sessionId)?.needRestart == true || InstalledPluginsState.getInstance().installedPlugins.isNotEmpty()
+  }
+
+  override suspend fun setPluginsAutoUpdateEnabled(enabled: Boolean) {
+    UpdateSettings.getInstance().isPluginsAutoUpdateEnabled = enabled
+    service<PluginAutoUpdateService>().onSettingsChanged()
   }
 
   override fun isPluginRequiresUltimateButItIsDisabled(sessionId: String, pluginId: PluginId): Boolean {
@@ -1093,7 +1101,7 @@ object DefaultUiPluginManagerController : UiPluginManagerController {
           if (depId == pluginId) {
             return@processAllNonOptionalDependencyIds FileVisitResult.CONTINUE
           }
-          if ((!session.pluginStates.contains(depId) && !pluginsState.wasInstalled(depId) && !pluginsState.wasUpdated(depId) && !pluginsState.wasInstalledWithoutRestart(depId)) || session.isPluginDisabled(depId)) {
+          if ((!session.pluginStates.contains(depId) && !pluginsState.wasInstalled(depId) && !pluginsState.wasUpdated(depId) && !pluginsState.wasInstalledWithoutRestart(depId)) || !session.isPluginEnabled(depId)) {
             session.dependentToRequiredListMap.putIfAbsent(pluginId, mutableSetOf())
             session.dependentToRequiredListMap[pluginId]!!.add(depId)
           }

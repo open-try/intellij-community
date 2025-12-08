@@ -2059,7 +2059,7 @@ public class PyTypeTest extends PyTestCase {
 
     doTest("Union[bool, int]",
            """
-             if True:
+             if input():
                  a = True
              else:
                  a = 5
@@ -2838,7 +2838,7 @@ public class PyTypeTest extends PyTestCase {
   public void testDunderInitSubclassFirstParameter() {
     runWithLanguageLevel(
       LanguageLevel.PYTHON36,
-      () -> doTest("Type[Foo]",
+      () -> doTest("Type[Self@Foo]",
                    """
                      class Foo:
                          def __init_subclass__(cls):
@@ -2850,7 +2850,7 @@ public class PyTypeTest extends PyTestCase {
   public void testDunderClassGetItemFirstParameter() {
     runWithLanguageLevel(
       LanguageLevel.PYTHON37,
-      () -> doTest("Type[Foo]",
+      () -> doTest("Type[Self@Foo]",
                    """
                      class Foo:
                          def __class_getitem__(cls, item):
@@ -3037,7 +3037,7 @@ public class PyTypeTest extends PyTestCase {
   public void testReplaceDefinitionInMethod() {
     doTest("Type[Derived]",
            """
-             class Base:
+             class Base(object):
                  def cls(self):
                      return self.__class__
              class Derived(Base):
@@ -3046,7 +3046,7 @@ public class PyTypeTest extends PyTestCase {
 
     doTest("Type[Derived]",
            """
-             class Base:
+             class Base(object):
                  def cls(self):
                      return self.__class__
              class Derived(Base):
@@ -3273,7 +3273,7 @@ public class PyTypeTest extends PyTestCase {
                                                     expr = UserId""");
 
         for (TypeEvalContext context : getTypeEvalContexts(definition)) {
-          assertInstanceOf(context.getType(definition), PyTypingNewType.class);
+          assertInstanceOf(context.getType(definition), PyTypingNewTypeFactoryType.class);
         }
 
         final PyExpression instance = parseExpr("""
@@ -3308,7 +3308,7 @@ public class PyTypeTest extends PyTestCase {
 
     runWithLanguageLevel(
       LanguageLevel.PYTHON36,
-      () -> doTest("Type[UserId]",
+      () -> doTest("(Dict[int, str]) -> UserId",
                    """
                      from typing import Dict, NewType
                      UserId = NewType('UserId', Dict[int, str])
@@ -4068,7 +4068,7 @@ public class PyTypeTest extends PyTestCase {
   public void testInferringAndMatchingCls() {
     runWithLanguageLevel(
       LanguageLevel.getLatest(),
-      () -> doTest("Subclass",
+      () -> doTest("Self@Subclass",
                    """
                      class Subclass(dict):
                          def __new__(cls, *args, **kwargs):

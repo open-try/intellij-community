@@ -916,6 +916,8 @@
     />
 
     <typedHandler implementation="com.intellij.codeInsight.inline.completion.listeners.typing.InlineCompletionTypedHandlerDelegate"/>
+    <inline.completion.suppress.state.supplier
+      implementation="com.intellij.codeInsight.inline.completion.suppress.InlineCompletionSuppressStateByInlinePromptSupplier"/>
     <inline.edit.awaiter implementation="com.intellij.codeInsight.inline.edit.InlineCompletionAwaiter"/>
     <editorActionHandler
       action="CallInlineCompletionAction"
@@ -1556,6 +1558,9 @@
     <applicationService serviceInterface="com.intellij.ui.AutoScrollToSourceTaskManager"
                         serviceImplementation="com.intellij.ui.AutoScrollToSourceTaskManagerImpl"/>
 
+    <applicationService serviceInterface="com.intellij.logCollector.CollectZippedLogsService"
+                        serviceImplementation="com.intellij.platform.ide.impl.logsUploader.CollectZippedLogsServiceImpl"/>
+
     <applicationService serviceImplementation="com.intellij.openapi.updateSettings.impl.UpdateCheckerService" headlessImplementation=""/>
     <postStartupActivity implementation="com.intellij.openapi.updateSettings.impl.UpdateCheckerProjectActivity" order="last"/>
 
@@ -1645,8 +1650,8 @@
                        key="notification.group.failed.to.generate.module.descriptors"/>
     <notificationGroup id="Ultimate Installed" displayType="BALLOON" bundle="messages.IdeBundle"
                        key="notification.group.advertiser.try.ultimate.installed"/>
-    <notificationGroup id="Mac15 Local Network" displayType="BALLOON" bundle="messages.IdeCoreBundle" key="mac15.local.network.issue.title"/>
     <notificationGroup id="code.style.cache.dump" displayType="BALLOON" hideFromSettings="true" isLogByDefault="false"/>
+    <notificationGroup id="proxy.auth.failed" displayType="STICKY_BALLOON" bundle="messages.UIBundle" key="proxy.auth.notification.title"/>
 
     <defaultHighlightingSettingProvider implementation="com.intellij.codeInsight.actions.ReaderModeHighlightingSettingsProvider"/>
     <registryKey key="html.editor.timeout" defaultValue="15000" description="HTML editor content loading timeout, ms"/>
@@ -1817,7 +1822,7 @@
                              provider="com.intellij.ide.minimap.settings.MinimapConfigurableProvider"
                              key="settings.name" bundle="messages.MinimapBundle"/>
     <registryKey key="popup.advertiser.speed.search" defaultValue="false" description="Shows speed search advertiser in popups"/>
-    <registryKey key="wayland.true.popups" defaultValue="false" description="Show popups in Wayland as true popups (allows remembering the location, but limits them to the IDE window)"/>
+    <registryKey key="wayland.true.popups" defaultValue="true" description="Show popups in Wayland as true popups (allows remembering the location, but limits them to the IDE window)"/>
     <actionPromoter implementation="com.intellij.ide.actions.speedSearch.SpeedSearchActionPromoter"/>
 
     <fileEditorProvider id="learnIde" implementation="com.intellij.openapi.wm.impl.welcomeScreen.learnIde.editorTab.LearnIdeFileEditorProvider"/>
@@ -2024,6 +2029,9 @@
     <registryKey key="ide.suppress.low.memory.notifications.when.dumb" defaultValue="false"
                  description="Disables Low Memory notifications during indexing for the sake of less false-positive detection for users" />
     <configFolderChangedListener implementation="com.intellij.configurationStore.ComponentStoreImplReloadListener"/>
+
+    <applicationService serviceInterface="com.intellij.configurationStore.defaults.DefaultSettingsService"
+                        serviceImplementation="com.intellij.configurationStore.defaults.DefaultSettingsServiceImpl" />
   </extensions>
 
   <applicationListeners>

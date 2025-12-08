@@ -1336,16 +1336,21 @@
       }
     },
     "Recap": {
+      "ijnext": "#DCCBFB",
       "cardBackground": "#FFFFFF",
       "cardBorderColor": "#FFFFFF",
       "cardHeaderTitle": "#000000",
+      "cardHeaderLinkBackground": "#F7F8FA",
       "cardHeaderSubtitle": "#6C707E",
       "cardFooterForeground": "#6C707E",
       "chroniclesBackground": "#F7F8FA",
       "chroniclesBorderColor": "#F7F8FA",
       "chroniclesBackgroundHovered": "#E9EAEE",
       "chroniclesForeground": "#000000",
-      "chroniclesForegroundGreyed": "#868A91"
+      "chroniclesForegroundGreyed": "#868A91",
+      "errorBackground": "#FFFAEB",
+      "errorBorder": "#FED277",
+      "errorForeground": "#000000"
     }
   },
 

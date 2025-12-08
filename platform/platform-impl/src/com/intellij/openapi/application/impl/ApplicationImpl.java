@@ -205,7 +205,7 @@ public final class ApplicationImpl extends ClientAwareComponentManager implement
     registerFakeServices(this);
 
     myIsInternal = isInternal;
-    myTestModeFlag = false;
+    myTestModeFlag = Boolean.getBoolean("idea.is.unit.test");
     myHeadlessMode = AppMode.isHeadless();
     myCommandLineMode = AppMode.isCommandLine();
     if (!myHeadlessMode || SystemProperties.getBooleanProperty("allow.save.application.headless", false)) {
@@ -909,7 +909,7 @@ public final class ApplicationImpl extends ClientAwareComponentManager implement
     @Nullable JComponent parentComponent,
     @Nullable @NlsContexts.Button String cancelText
   ) {
-    if (SwingUtilities.isEventDispatchThread()) {
+    if (EDT.isCurrentThreadEdt()) {
       return CompletableFuture.completedFuture(
         createProgressWindow(progressTitle, canBeCanceled, shouldShowModalWindow, project, parentComponent, cancelText));
     }

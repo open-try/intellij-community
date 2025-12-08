@@ -9,8 +9,10 @@ import org.jetbrains.intellij.build.impl.BuildContextImpl
 import org.jetbrains.intellij.build.impl.qodana.QodanaProductProperties
 import org.jetbrains.intellij.build.io.copyDir
 import org.jetbrains.intellij.build.io.copyFileToDir
-import org.jetbrains.intellij.build.kotlin.KotlinBinaries
-import org.jetbrains.intellij.build.productLayout.*
+import org.jetbrains.intellij.build.productLayout.CommunityModuleSets
+import org.jetbrains.intellij.build.productLayout.CommunityProductFragments
+import org.jetbrains.intellij.build.productLayout.ProductModulesContentSpec
+import org.jetbrains.intellij.build.productLayout.productModules
 import java.nio.file.Path
 
 val MAVEN_ARTIFACTS_ADDITIONAL_MODULES: PersistentList<String> = persistentListOf(
@@ -50,6 +52,7 @@ open class IdeaCommunityProperties(private val communityHomeDir: Path) : JetBrai
       "intellij.platform.starter",
       "intellij.idea.community.customization",
     )
+
     productLayout.bundledPluginModules = IDEA_BUNDLED_PLUGINS + sequenceOf(
       "intellij.javaFX.community"
     )
@@ -107,14 +110,11 @@ open class IdeaCommunityProperties(private val communityHomeDir: Path) : JetBrai
     additionalVmOptions = persistentListOf("-Dllm.show.ai.promotion.window.on.start=false")
   }
 
-  override val moduleSetsProviders: List<ModuleSetProvider>
-    get() = listOf(CommunityModuleSets)
-
   override val baseFileName: String
     get() = "idea"
 
   override fun getProductContentDescriptor(): ProductModulesContentSpec = productModules {
-    include(intellijCommunityBaseFragment())
+    include(intellijCommunityBaseFragment(platformPrefix))
     include(communityExtensionsFragment())
   }
 
@@ -134,81 +134,11 @@ open class IdeaCommunityProperties(private val communityHomeDir: Path) : JetBrai
 
   protected open suspend fun bundleExternalPlugins(context: BuildContext, targetDirectory: Path) {}
 
-  override fun createWindowsCustomizer(projectHome: Path): WindowsDistributionCustomizer = CommunityWindowsDistributionCustomizer()
+  override fun createWindowsCustomizer(projectHome: Path): WindowsDistributionCustomizer = communityWindowsCustomizer(communityHomeDir)
 
-  override fun createLinuxCustomizer(projectHome: String): LinuxDistributionCustomizer = CommunityLinuxDistributionCustomizer()
+  override fun createLinuxCustomizer(projectHome: String): LinuxDistributionCustomizer = communityLinuxCustomizer(communityHomeDir)
 
-  override fun createMacCustomizer(projectHome: Path): MacDistributionCustomizer = CommunityMacDistributionCustomizer()
-
-  protected open inner class CommunityWindowsDistributionCustomizer : WindowsDistributionCustomizer() {
-    init {
-      icoPath = communityHomeDir.resolve("build/conf/ideaCE/win/images/idea_CE.ico")
-      icoPathForEAP = communityHomeDir.resolve("build/conf/ideaCE/win/images/idea_CE_EAP.ico")
-      installerImagesPath = communityHomeDir.resolve("build/conf/ideaCE/win/images")
-    }
-
-    override val fileAssociations: List<String>
-      get() = listOf("java", "gradle", "groovy", "kt", "kts", "pom")
-
-    override fun getFullNameIncludingEdition(appInfo: ApplicationInfoProperties): String = "IntelliJ IDEA Community Edition"
-
-    override fun getFullNameIncludingEditionAndVendor(appInfo: ApplicationInfoProperties): String = "IntelliJ IDEA Community Edition"
-
-    override fun getUninstallFeedbackPageUrl(appInfo: ApplicationInfoProperties): String {
-      return "https://www.jetbrains.com/idea/uninstall/?edition=IC-${appInfo.majorVersion}.${appInfo.minorVersion}"
-    }
-  }
-
-  protected open inner class CommunityLinuxDistributionCustomizer : LinuxDistributionCustomizer() {
-    init {
-      iconPngPath = "${communityHomeDir}/build/conf/ideaCE/linux/images/icon_CE_128.png"
-      iconPngPathForEAP = "${communityHomeDir}/build/conf/ideaCE/linux/images/icon_CE_EAP_128.png"
-      snapName = "intellij-idea-community"
-      snapDescription =
-        "The most intelligent Java IDE. Every aspect of IntelliJ IDEA is specifically designed to maximize developer productivity. " +
-        "Together, powerful static code analysis and ergonomic design make development not only productive but also an enjoyable experience."
-    }
-
-    override fun getRootDirectoryName(appInfo: ApplicationInfoProperties, buildNumber: String): String = "idea-IC-$buildNumber"
-
-    override fun generateExecutableFilesPatterns(
-      includeRuntime: Boolean,
-      arch: JvmArchitecture,
-      targetLibcImpl: LibcImpl,
-      context: BuildContext,
-    ): Sequence<String> {
-      return super.generateExecutableFilesPatterns(includeRuntime, arch, targetLibcImpl, context)
-        .plus(KotlinBinaries.kotlinCompilerExecutables)
-        .filterNot { it == "plugins/**/*.sh" }
-    }
-  }
-
-  protected open inner class CommunityMacDistributionCustomizer : MacDistributionCustomizer() {
-    init {
-      icnsPath = communityHomeDir.resolve("build/conf/ideaCE/mac/images/idea.icns")
-      icnsPathForEAP = communityHomeDir.resolve("build/conf/ideaCE/mac/images/communityEAP.icns")
-      urlSchemes = listOf("idea")
-      associateIpr = true
-      fileAssociations = FileAssociation.from("java", "groovy", "kt", "kts")
-      bundleIdentifier = "com.jetbrains.intellij.ce"
-      dmgImagePath = communityHomeDir.resolve("build/conf/ideaCE/mac/images/dmg_background.tiff")
-    }
-
-    override fun getRootDirectoryName(appInfo: ApplicationInfoProperties, buildNumber: String): String {
-      if (appInfo.isEAP) {
-        return "IntelliJ IDEA ${appInfo.majorVersion}.${appInfo.minorVersionMainPart} CE EAP.app"
-      }
-      else {
-        return "IntelliJ IDEA CE.app"
-      }
-    }
-
-    override fun generateExecutableFilesPatterns(includeRuntime: Boolean, arch: JvmArchitecture, context: BuildContext): Sequence<String> {
-      return super.generateExecutableFilesPatterns(includeRuntime, arch, context)
-        .plus(KotlinBinaries.kotlinCompilerExecutables)
-        .filterNot { it == "plugins/**/*.sh" }
-    }
-  }
+  override fun createMacCustomizer(projectHome: Path): MacDistributionCustomizer = communityMacCustomizer(communityHomeDir)
 
   override fun getSystemSelector(appInfo: ApplicationInfoProperties, buildNumber: String): String {
     return "IdeaIC${appInfo.majorVersion}.${appInfo.minorVersionMainPart}"
@@ -219,17 +149,54 @@ open class IdeaCommunityProperties(private val communityHomeDir: Path) : JetBrai
   override fun getOutputDirectoryName(appInfo: ApplicationInfoProperties): String = "idea-ce"
 }
 
+@Suppress("unused")
+open class AndroidStudioProperties(communityHomeDir: Path) : IdeaCommunityProperties(communityHomeDir) {
+  init {
+    platformPrefix = "AndroidStudio"
+    applicationInfoModule = "intellij.idea.android.customization"
+
+    productLayout.productImplementationModules += "intellij.idea.android.customization"
+
+    val defaultBundledPlugins = IDEA_BUNDLED_PLUGINS
+      .remove("intellij.mcpserver")
+      .remove("intellij.featuresTrainer")
+
+    productLayout.bundledPluginModules = defaultBundledPlugins + persistentListOf(
+      "intellij.android.compose-ide-plugin",
+      "intellij.android.design-plugin.descriptor",
+      "intellij.android.plugin.descriptor",
+      "intellij.android.smali",
+      "intellij.webp",
+    )
+  }
+
+  override fun getProductContentDescriptor(): ProductModulesContentSpec = productModules {
+    include(intellijCommunityBaseFragment(platformPrefix))
+    // no community extensions
+  }
+}
+
 /**
  * Base IntelliJ Community content fragment.
  * This fragment is composable - subclasses can include this and optionally add community extensions.
  */
-fun intellijCommunityBaseFragment(): ProductModulesContentSpec = productModules {
-  alias("com.intellij.modules.idea")
-  alias("com.intellij.modules.idea.community")
+fun intellijCommunityBaseFragment(platformPrefix: String? = null): ProductModulesContentSpec = productModules {
+  if (platformPrefix == "AndroidStudio") {
+    alias("com.intellij.modules.androidstudio")
+  }
+  else {
+    alias("com.intellij.modules.idea")
+    alias("com.intellij.modules.idea.community")
+  }
+
   alias("com.intellij.modules.java-capable")
   alias("com.intellij.modules.python-core-capable")
   alias("com.intellij.modules.python-in-non-pycharm-ide-capable")
-  alias("com.intellij.platform.ide.provisioner")
+
+  if (platformPrefix != "AndroidStudio") {
+    alias("com.intellij.platform.ide.provisioner")
+    alias("com.intellij.modules.jcef")
+  }
 
   include(CommunityProductFragments.javaIdeBaseFragment())
   deprecatedInclude("intellij.idea.community.customization", "META-INF/tips-intellij-idea-community.xml")
@@ -246,6 +213,10 @@ fun intellijCommunityBaseFragment(): ProductModulesContentSpec = productModules 
   module("intellij.idea.customization.base")
   module("intellij.idea.customization.backend")
   module("intellij.platform.tips")
+
+  if (System.getProperty("idea.platform.prefix") == "AndroidStudio") {
+    module("intellij.idea.android.customization")
+  }
 
   moduleSet(CommunityModuleSets.ideCommon())
   moduleSet(CommunityModuleSets.rdCommon())

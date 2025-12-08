@@ -1,23 +1,24 @@
-// Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
+﻿// Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.xdebugger.impl
 
 import com.intellij.diagnostic.logging.AdditionalTabComponent
 import com.intellij.diagnostic.logging.LogConsoleBase
 import com.intellij.execution.configurations.AdditionalTabComponentManagerEx
+import com.intellij.ide.rpc.rpcId
 import com.intellij.ide.rpc.setupTransfer
 import com.intellij.ide.ui.icons.rpcId
 import com.intellij.openapi.application.runInEdt
 import com.intellij.openapi.util.Disposer
+import com.intellij.platform.debugger.impl.rpc.XDebugSessionAdditionalTabComponentManagerId
 import com.intellij.platform.debugger.impl.rpc.XDebuggerSessionAdditionalTabDto
 import com.intellij.platform.debugger.impl.rpc.XDebuggerSessionAdditionalTabEvent
-import com.intellij.platform.debugger.impl.rpc.XDebuggerSessionAdditionalTabId
+import com.intellij.platform.debugger.impl.rpc.XDebuggerTabId
 import com.intellij.platform.kernel.ids.BackendValueIdType
 import com.intellij.platform.kernel.ids.findValueById
 import com.intellij.platform.kernel.ids.storeValueGlobally
 import com.intellij.ui.content.Content
 import com.intellij.util.asDisposable
 import com.intellij.xdebugger.SplitDebuggerMode
-import com.intellij.xdebugger.impl.rpc.XDebugSessionAdditionalTabComponentManagerId
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -32,7 +33,7 @@ class XDebugSessionAdditionalTabComponentManager(private val debugTabScope: Coro
   }
 
   val id: XDebugSessionAdditionalTabComponentManagerId = storeValueGlobally(debugTabScope, this, XDebugSessionAdditionalTabComponentManagerValueIdType)
-  private val tabToId = mutableMapOf<AdditionalTabComponent, XDebuggerSessionAdditionalTabId>()
+  private val tabToId = mutableMapOf<AdditionalTabComponent, XDebuggerTabId>()
 
   private val _tabComponentEvents = MutableSharedFlow<XDebuggerSessionAdditionalTabEvent>(replay = 1000)
   val tabComponentEvents: Flow<XDebuggerSessionAdditionalTabEvent> = _tabComponentEvents.asSharedFlow()
@@ -47,7 +48,8 @@ class XDebugSessionAdditionalTabComponentManager(private val debugTabScope: Coro
     }
     val tabId = tabComponent.setupTransfer(debugTabScope.asDisposable())
     tabToId[tabComponent] = tabId
-    val serializableTab = XDebuggerSessionAdditionalTabDto(tabId, contentId = id, tabComponent.tabTitle, tabComponent.tooltip, icon?.rpcId(), closeable)
+    val groupId = tabComponent.toolbarActions?.rpcId(debugTabScope)
+    val serializableTab = XDebuggerSessionAdditionalTabDto(tabId, contentId = id, tabComponent.tabTitle, tabComponent.tooltip, icon?.rpcId(), closeable, groupId)
     _tabComponentEvents.tryEmit(XDebuggerSessionAdditionalTabEvent.TabAdded(serializableTab))
     return null
   }

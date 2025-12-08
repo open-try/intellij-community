@@ -4,14 +4,11 @@ package com.jetbrains.python.codeInsight.typing;
 import com.dynatrace.hash4j.hashing.HashValue128;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
-import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.*;
 import com.intellij.psi.PsiComment;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.impl.source.resolve.FileContextUtil;
-import com.intellij.psi.search.GlobalSearchScope;
-import com.intellij.psi.stubs.StubIndex;
 import com.intellij.psi.util.CachedValueProvider;
 import com.intellij.psi.util.CachedValuesManager;
 import com.intellij.psi.util.PsiTreeUtil;
@@ -42,8 +39,6 @@ import com.jetbrains.python.psi.impl.stubs.PyTypingAliasStubType;
 import com.jetbrains.python.psi.resolve.PyResolveContext;
 import com.jetbrains.python.psi.resolve.PyResolveUtil;
 import com.jetbrains.python.psi.resolve.RatedResolveResult;
-import com.jetbrains.python.psi.search.PySearchUtilBase;
-import com.jetbrains.python.psi.stubs.PyModuleNameIndex;
 import com.jetbrains.python.psi.types.*;
 import com.jetbrains.python.psi.types.PyTypeParameterMapping.Option;
 import one.util.streamex.StreamEx;
@@ -988,6 +983,10 @@ public final class PyTypingTypeProvider extends PyTypeProviderWithCustomContext<
       if (noneType != null) {
         return noneType;
       }
+      PyTypingNewType newType = PyTypingNewTypeTypeProvider.getNewTypeForResolvedElement(resolved, context.getTypeContext());
+      if (newType != null) {
+        return Ref.create(newType.toInstance());
+      }
       final Ref<PyType> classType = getClassType(typeHint, resolved, context);
       if (classType != null) {
         return classType;
@@ -1054,7 +1053,7 @@ public final class PyTypingTypeProvider extends PyTypeProviderWithCustomContext<
       PyClassType scopeClassType = as(containingClass.getType(context.getTypeContext()), PyClassType.class);
       if (scopeClassType == null) return null;
 
-      return Ref.create(new PySelfType(scopeClassType));
+      return Ref.create(new PySelfType(scopeClassType).toInstance());
     }
     return null;
   }
@@ -1125,6 +1124,10 @@ public final class PyTypingTypeProvider extends PyTypeProviderWithCustomContext<
     final PyTypeVarType typeVar = as(type, PyTypeVarType.class);
     if (typeVar != null && !typeVar.isDefinition()) {
       return Ref.create(typeVar.toClass());
+    }
+    final PySelfType selfType = as(type, PySelfType.class);
+    if (selfType != null) {
+      return Ref.create(selfType.toClass());
     }
     // Represent Type[Union[str, int]] internally as Union[Type[str], Type[int]]
     if (type instanceof PyUnionType unionType &&

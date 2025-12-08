@@ -17,6 +17,8 @@ import com.intellij.openapi.util.NlsContexts;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.platform.debugger.impl.shared.SplitDebuggerAction;
+import com.intellij.platform.debugger.impl.shared.proxy.XDebugSessionProxy;
+import com.intellij.platform.debugger.impl.shared.proxy.XStackFramesListColorsCache;
 import com.intellij.pom.Navigatable;
 import com.intellij.psi.PsiManager;
 import com.intellij.psi.search.scope.NonProjectFilesScope;
@@ -40,7 +42,9 @@ import com.intellij.xdebugger.XDebuggerBundle;
 import com.intellij.xdebugger.XSourcePosition;
 import com.intellij.xdebugger.frame.XDropFrameHandler;
 import com.intellij.xdebugger.frame.XStackFrame;
+import com.intellij.xdebugger.impl.proxy.MonolithSessionProxyKt;
 import com.intellij.xml.util.XmlStringUtil;
+import kotlin.Unit;
 import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -104,15 +108,16 @@ public class XDebuggerFramesList extends DebuggerFramesList implements UiCompati
   }
 
   public XDebuggerFramesList(@NotNull Project project, @NotNull XDebugSession session) {
-    this(project, XDebugSessionProxyKeeperKt.asProxy(session));
+    this(project, MonolithSessionProxyKt.asProxy(session));
   }
 
   @ApiStatus.Internal
   public XDebuggerFramesList(@NotNull Project project, @Nullable XDebugSessionProxy sessionProxy) {
     myProject = project;
-    myFileColorsCache = sessionProxy == null
-                        ? new OldFileColorsCache(project)
-                        : sessionProxy.createFileColorsCache(this);
+    myFileColorsCache = sessionProxy == null ? new OldFileColorsCache() : sessionProxy.createFileColorsCache(() -> {
+      SwingUtilities.invokeLater(this::repaint);
+      return Unit.INSTANCE;
+    });
     doInit();
 
     // This is a workaround for the performance issue IDEA-187063
@@ -166,6 +171,9 @@ public class XDebuggerFramesList extends DebuggerFramesList implements UiCompati
     if (frame == null) return;
     sink.lazy(CommonDataKeys.NAVIGATABLE, () -> {
       return getFrameNavigatable(frame, true);
+    });
+    sink.lazy(CommonDataKeys.NAVIGATABLE_ARRAY, () -> {
+      return new Navigatable[]{getFrameNavigatable(frame, true)};
     });
     sink.lazy(CommonDataKeys.VIRTUAL_FILE, () -> {
       return getFile(frame);
@@ -252,7 +260,7 @@ public class XDebuggerFramesList extends DebuggerFramesList implements UiCompati
     if (stackFrame instanceof ItemWithCustomBackgroundColor) {
       return ((ItemWithCustomBackgroundColor)stackFrame).getBackgroundColor();
     }
-    return myFileColorsCache.get(stackFrame);
+    return myFileColorsCache.get(stackFrame, myProject);
   }
 
   private class XDebuggerGroupedFrameListRenderer extends GroupedItemsListRenderer {
@@ -437,27 +445,23 @@ public class XDebuggerFramesList extends DebuggerFramesList implements UiCompati
    * @deprecated Only used in old code that doesn't provide a session
    */
   @Deprecated
-  private class OldFileColorsCache extends XStackFramesListColorsCache {
+  private class OldFileColorsCache implements XStackFramesListColorsCache {
     private static final Color NULL_COLOR = JBColor.marker("NULL_COLOR");
     private static final Color COMPUTING_COLOR = JBColor.marker("COMPUTING_COLOR");
     private volatile Map<VirtualFile, Color> myFileColors = new HashMap<>();
 
-    OldFileColorsCache(Project project) {
-      super(project);
-    }
-
     @Override
-    public @Nullable Color get(@NotNull XStackFrame stackFrame) {
+    public @Nullable Color get(@NotNull XStackFrame stackFrame, @NotNull Project project) {
       VirtualFile file = getFile(stackFrame);
       if (file == null) {
         return null;
       }
-      return get(file);
+      return get(file, project);
     }
 
     @RequiresEdt
     @Nullable
-    Color get(@Nullable VirtualFile virtualFile) {
+    Color get(@Nullable VirtualFile virtualFile, @NotNull Project project) {
       if (virtualFile != null) {
         Color res = myFileColors.get(virtualFile);
         if (res != null) {
@@ -468,7 +472,7 @@ public class XDebuggerFramesList extends DebuggerFramesList implements UiCompati
           fileColors.put(virtualFile, COMPUTING_COLOR);
           ApplicationManager.getApplication().executeOnPooledThread(() -> {
             if (fileColors == myFileColors) { // check if it is obsolete already
-              Color color = ReadAction.compute(() -> getColorsManager().getFileColor(virtualFile));
+              Color color = ReadAction.compute(() -> FileColorManager.getInstance(project).getFileColor(virtualFile));
               EdtExecutorService.getInstance().execute(() -> {
                 if (fileColors == myFileColors) { // check if it is obsolete already
                   fileColors.put(virtualFile, color == null ? NULL_COLOR : color);
@@ -482,7 +486,7 @@ public class XDebuggerFramesList extends DebuggerFramesList implements UiCompati
         }
       }
       else {
-        return getColorsManager().getScopeColor(NonProjectFilesScope.NAME);
+        return FileColorManager.getInstance(project).getScopeColor(NonProjectFilesScope.NAME);
       }
       return null;
     }

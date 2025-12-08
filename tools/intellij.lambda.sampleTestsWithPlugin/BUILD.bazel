@@ -14,6 +14,12 @@ resourcegroup(
 )
 
 jvm_library(
+  name = "lambda-sampleTestsWithPlugin",
+  visibility = ["//visibility:public"],
+  srcs = glob([], allow_empty = True)
+)
+
+jvm_library(
   name = "lambda-sampleTestsWithPlugin_test_lib",
   module_name = "intellij.lambda.sampleTestsWithPlugin",
   visibility = ["//visibility:public"],
@@ -31,6 +37,7 @@ jvm_library(
     "//tools/intellij.tools.ide.starter.junit5:ide-starter-junit5_test_lib",
     "//tools/intellij.tools.ide.starter.driver:ide-starter-driver",
     "//tools/intellij.tools.ide.starter.build.server:ide-starter-build-server",
+    "//platform/projectModel-api:projectModel",
     "//platform/core-api:core",
     "//platform/core-impl",
     "//platform/core-ui",

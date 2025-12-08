@@ -2874,6 +2874,11 @@ public abstract class K1IntentionTestGenerated extends AbstractK1IntentionTest {
                     runTest("testData/intentions/branched/ifWhen/ifToWhen/ifWithoutElse.kt");
                 }
 
+                @TestMetadata("ifsWithoutElse.kt")
+                public void testIfsWithoutElse() throws Exception {
+                    runTest("testData/intentions/branched/ifWhen/ifToWhen/ifsWithoutElse.kt");
+                }
+
                 @TestMetadata("lambdaExpression.kt")
                 public void testLambdaExpression() throws Exception {
                     runTest("testData/intentions/branched/ifWhen/ifToWhen/lambdaExpression.kt");
@@ -8378,6 +8383,11 @@ public abstract class K1IntentionTestGenerated extends AbstractK1IntentionTest {
         @TestMetadata("funWithCustomUnitClass.kt")
         public void testFunWithCustomUnitClass() throws Exception {
             runTest("testData/intentions/convertToBlockBody/funWithCustomUnitClass.kt");
+        }
+
+        @TestMetadata("funWithReturnStmt.kt")
+        public void testFunWithReturnStmt() throws Exception {
+            runTest("testData/intentions/convertToBlockBody/funWithReturnStmt.kt");
         }
 
         @TestMetadata("funWithThrow.kt")
@@ -17849,6 +17859,21 @@ public abstract class K1IntentionTestGenerated extends AbstractK1IntentionTest {
         @TestMetadata("variableWithoutInitializer.kt")
         public void testVariableWithoutInitializer() throws Exception {
             runTest("testData/intentions/specifyTypeExplicitly/variableWithoutInitializer.kt");
+        }
+
+        @TestMetadata("withReturnInExpressionBody.kt")
+        public void testWithReturnInExpressionBody() throws Exception {
+            runTest("testData/intentions/specifyTypeExplicitly/withReturnInExpressionBody.kt");
+        }
+
+        @TestMetadata("withReturnInExpressionBodyProperty.kt")
+        public void testWithReturnInExpressionBodyProperty() throws Exception {
+            runTest("testData/intentions/specifyTypeExplicitly/withReturnInExpressionBodyProperty.kt");
+        }
+
+        @TestMetadata("withReturnInExpressionBodyPropertyAccessor.kt")
+        public void testWithReturnInExpressionBodyPropertyAccessor() throws Exception {
+            runTest("testData/intentions/specifyTypeExplicitly/withReturnInExpressionBodyPropertyAccessor.kt");
         }
     }
 

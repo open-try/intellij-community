@@ -16,8 +16,6 @@ import kotlinx.collections.immutable.persistentMapOf
 import org.jetbrains.annotations.ApiStatus
 import org.jetbrains.intellij.build.impl.PlatformLayout
 import org.jetbrains.intellij.build.impl.qodana.QodanaProductProperties
-import org.jetbrains.intellij.build.productLayout.CommunityModuleSets
-import org.jetbrains.intellij.build.productLayout.ModuleSetProvider
 import org.jetbrains.intellij.build.productLayout.ProductModulesContentSpec
 import org.jetbrains.intellij.build.productLayout.ProductModulesLayout
 import org.jetbrains.jps.model.JpsProject
@@ -163,6 +161,13 @@ abstract class ProductProperties {
    * If `true`, the product's main JAR file will be scrambled using [ProprietaryBuildTools.scrambleTool].
    */
   var scrambleMainJar: Boolean = false
+
+  /**
+   * List of content modules from the core plugin which should be scrambled using [ProprietaryBuildTools.scrambleTool].
+   * Modules are mentioned here should be put to separate JARs (i.e., they aren't registered as 'embedded' and don't have the 'package' attribute).
+   * If some modules are listed here, it's required [scrambleMainJar] to be set to `true`.
+   */
+  var contentModulesToScramble: List<String> = emptyList()
 
   /**
    * Path to an alternative scramble script which will should be used for a product.
@@ -505,15 +510,6 @@ abstract class ProductProperties {
       is PluginCreationFail -> result.errorsAndWarnings
     }
   }
-
-  /**
-   * List of module sets providers used to discover and resolve module set relationships.
-   * Used only for packaging tests to group modules by their module sets.
-   *
-   * For community builds: [CommunityModuleSets]
-   * For ultimate builds: both UltimateModuleSets and [CommunityModuleSets]
-   */
-  abstract val moduleSetsProviders: List<ModuleSetProvider>
 }
 
 /**

@@ -7,7 +7,10 @@ import kotlinx.collections.immutable.plus
 import org.jetbrains.intellij.build.*
 import org.jetbrains.intellij.build.impl.qodana.QodanaProductProperties
 import org.jetbrains.intellij.build.io.copyFileToDir
-import org.jetbrains.intellij.build.productLayout.*
+import org.jetbrains.intellij.build.productLayout.CommunityModuleSets
+import org.jetbrains.intellij.build.productLayout.CommunityProductFragments
+import org.jetbrains.intellij.build.productLayout.ProductModulesContentSpec
+import org.jetbrains.intellij.build.productLayout.productModules
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -47,9 +50,6 @@ open class PyCharmCommunityProperties(protected val communityHome: Path) : PyCha
     qodanaProductProperties = QodanaProductProperties(@Suppress("SpellCheckingInspection") "QDPYC", "Qodana Community for Python")
   }
 
-  override val moduleSetsProviders: List<ModuleSetProvider>
-    get() = listOf(CommunityModuleSets)
-
   override fun getProductContentDescriptor(): ProductModulesContentSpec = productModules {
     // Module capability aliases
     alias("com.intellij.modules.pycharm.community")
@@ -87,25 +87,21 @@ open class PyCharmCommunityProperties(protected val communityHome: Path) : PyCha
 
   override fun getBaseArtifactName(appInfo: ApplicationInfoProperties, buildNumber: String): String = "pycharmPC-$buildNumber"
 
-  override fun createWindowsCustomizer(projectHome: Path): WindowsDistributionCustomizer = object : WindowsDistributionCustomizer() {
-    init {
-      icoPath = communityHome.resolve("python/build/resources/PyCharmCore.ico")
-      icoPathForEAP = communityHome.resolve("python/build/resources/PyCharmCore_EAP.ico")
-      installerImagesPath = communityHome.resolve("python/build/resources")
-    }
+  override fun createWindowsCustomizer(projectHome: Path): WindowsDistributionCustomizer = windowsCustomizer(communityHome) {
+    icoPath = "python/build/resources/PyCharmCore.ico"
+    icoPathForEAP = "python/build/resources/PyCharmCore_EAP.ico"
+    installerImagesPath = "python/build/resources"
 
-    override val fileAssociations: List<String>
-      get() = listOf("py")
+    fileAssociations = listOf("py")
 
-    override fun getFullNameIncludingEdition(appInfo: ApplicationInfoProperties) = "PyCharm Community Edition"
+    fullName { "PyCharm Community Edition" }
 
-    override suspend fun copyAdditionalFiles(targetDir: Path, arch: JvmArchitecture, context: BuildContext) {
-      super.copyAdditionalFiles(targetDir, arch, context)
+    copyAdditionalFiles { targetDir, _, context ->
       PyCharmBuildUtils.copySkeletons(context, targetDir, "skeletons-win*.zip")
     }
 
-    override fun getUninstallFeedbackPageUrl(appInfo: ApplicationInfoProperties): String {
-      return "https://www.jetbrains.com/pycharm/uninstall/?version=${appInfo.productCode}-${appInfo.majorVersion}.${appInfo.minorVersion}"
+    uninstallFeedbackUrl { appInfo ->
+      "https://www.jetbrains.com/pycharm/uninstall/?version=${appInfo.productCode}-${appInfo.majorVersion}.${appInfo.minorVersion}"
     }
   }
 
@@ -114,12 +110,14 @@ open class PyCharmCommunityProperties(protected val communityHome: Path) : PyCha
   override fun createLinuxCustomizer(projectHome: String): LinuxDistributionCustomizer {
     return object : LinuxDistributionCustomizer() {
       init {
-        iconPngPath = "${communityHome}/python/build/resources/PyCharmCore128.png"
-        iconPngPathForEAP = "${communityHome}/python/build/resources/PyCharmCore128_EAP.png"
-        snapName = "pycharm-community"
-        snapDescription =
-          "Python IDE for professional developers. Save time while PyCharm takes care of the routine. " +
-          "Focus on bigger things and embrace the keyboard-centric approach to get the most of PyCharm’s many productivity features."
+        iconPngPath = communityHome.resolve("python/build/resources/PyCharmCore128.png")
+        iconPngPathForEAP = communityHome.resolve("python/build/resources/PyCharmCore128_EAP.png")
+        snaps += Snap(
+          name = "pycharm-community",
+          description =
+            "Python IDE for professional developers. Save time while PyCharm takes care of the routine. " +
+            "Focus on bigger things and embrace the keyboard-centric approach to get the most of PyCharm’s many productivity features."
+        )
       }
 
       override fun getRootDirectoryName(appInfo: ApplicationInfoProperties, buildNumber: String): String {

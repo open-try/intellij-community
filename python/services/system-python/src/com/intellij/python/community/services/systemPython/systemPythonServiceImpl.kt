@@ -10,6 +10,7 @@ import com.intellij.platform.eel.EelApi
 import com.intellij.platform.eel.EelDescriptor
 import com.intellij.platform.eel.provider.getEelDescriptor
 import com.intellij.platform.eel.provider.localEel
+import com.intellij.platform.eel.provider.toEelApi
 import com.intellij.python.community.impl.installer.PySdkToInstallManager
 import com.intellij.python.community.services.internal.impl.VanillaPythonWithPythonInfoImpl
 import com.intellij.python.community.services.systemPython.SystemPythonServiceImpl.MyServiceState
@@ -137,7 +138,10 @@ internal class SystemPythonServiceImpl(scope: CoroutineScope) : SystemPythonServ
 
         }.toSet()
       // Remove stale pythons from the cache
-      state.userProvidedPythons.removeAll(badPythons.map { it.pathString })
+      val newPaths = state.userProvidedPythons.distinct().toMutableList()
+      newPaths.removeAll(badPythons.map { it.pathString })
+      state.userProvidedPythons.clear()
+      state.userProvidedPythons.addAll(newPaths)
       logger.info("pythons refreshed")
       return@withContext result.sorted()
     }

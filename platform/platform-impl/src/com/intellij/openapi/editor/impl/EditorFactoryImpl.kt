@@ -115,13 +115,13 @@ class EditorFactoryImpl(coroutineScope: CoroutineScope?) : EditorFactory() {
     return document
   }
 
-  fun createDocument(allowUpdatesWithoutWriteAction: Boolean): Document {
+  override fun createDocument(allowUpdatesWithoutWriteAction: Boolean): Document {
     val document = DocumentImpl("", allowUpdatesWithoutWriteAction)
     editorEventMulticaster.registerDocument(document)
     return document
   }
 
-  fun createDocument(text: CharSequence, acceptsSlashR: Boolean, allowUpdatesWithoutWriteAction: Boolean): Document {
+  override fun createDocument(text: CharSequence, acceptsSlashR: Boolean, allowUpdatesWithoutWriteAction: Boolean): Document {
     val document = DocumentImpl(text, acceptsSlashR, allowUpdatesWithoutWriteAction)
     editorEventMulticaster.registerDocument(document)
     return document
@@ -247,7 +247,9 @@ class EditorFactoryImpl(coroutineScope: CoroutineScope?) : EditorFactory() {
         for (clientEditors in ClientEditorManager.getAllInstances()) {
           if (clientEditors.editorReleased(editor)) {
             LOG.debug { "number of Editors after release: ${clientEditors.editorsSequence().count()}" }
-            if (clientEditors != ClientEditorManager.getCurrentInstance()) {
+            //don't try creating the service to avoid CancellationException
+            val currentInstance = ClientEditorManager.getCurrentInstanceIfCreated()
+            if (currentInstance != null && clientEditors != currentInstance) {
               LOG.warn("Released editor didn't belong to current session")
             }
             break

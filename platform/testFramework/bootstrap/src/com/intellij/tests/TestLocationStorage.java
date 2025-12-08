@@ -18,6 +18,38 @@ import java.nio.file.StandardOpenOption;
 import java.security.CodeSource;
 import java.util.logging.Logger;
 
+/**
+ * Runtime component that records test execution locations to support code ownership resolution.
+ *
+ * <p>This class is invoked during test execution by JUnit Platform listeners to capture metadata
+ * about each test's location in the codebase. It extracts the test's module name, package path,
+ * and source file name.</p>
+ *
+ * <h2>Output Format</h2>
+ * <p>Test locations are written to an NDJSON file (one JSON object per line) at
+ * {@code out/test-artifacts/test-locations.ndjson}. Each entry contains:</p>
+ * <ul>
+ *   <li>Test name (fully qualified)</li>
+ *   <li>Module name (from JAR location)</li>
+ *   <li>Package path (from bytecode)</li>
+ *   <li>Source file name (from bytecode)</li>
+ *   <li>Failure status (boolean)</li>
+ * </ul>
+ *
+ * <h2>Integration Points</h2>
+ * <p>This class works together with the build-time artifact generators and test owner resolver:</p>
+ * <ul>
+ *   <li>{@link TestsPaths} - Generates file location mappings at build time</li>
+ *   <li>{@link ModulePaths} - Generates module path mappings at build time</li>
+ *   <li>{@link CodeOwners} - Generates code ownership index at build time</li>
+ *   <li>{@link ResolveTestOwners} - Consumes this output to determine test owners</li>
+ * </ul>
+ *
+ * @see ResolveTestOwners
+ * @see TestsPaths
+ * @see ModulePaths
+ * @see CodeOwners
+ */
 public final class TestLocationStorage {
 
   public static final Logger LOG = Logger.getLogger(TestLocationStorage.class.getName());
@@ -25,8 +57,30 @@ public final class TestLocationStorage {
   /**
    * Path to the test location artifact file (NDJSON format)
    */
-  private static final Path TEST_LOCATION_ARTIFACT =
-    Paths.get(System.getProperty("intellij.test.location.artifact", "../../out/test-artifacts/test-locations.ndjson"));
+  private static final Path TEST_LOCATION_ARTIFACT = getDefaultArtifactPath();
+
+  private static Path getDefaultArtifactPath() {
+    String customPath = System.getProperty("intellij.test.location.artifact");
+    if (customPath != null) {
+      return Paths.get(customPath);
+    }
+
+    Path parent = Paths.get("").getParent();
+    if (parent != null) {
+      Path grandParent = parent.getParent();
+      if (grandParent != null) {
+        if (Files.exists(grandParent.resolve("out"))) {
+          return grandParent.resolve("out/test-artifacts/test-locations.ndjson");
+        }
+      }
+
+      // We're in community folder
+      if (Files.exists(parent.resolve("out"))) {
+        return parent.resolve("out/test-artifacts/test-locations.ndjson");
+      }
+    }
+    return Paths.get("out/test-artifacts/test-locations.ndjson");
+  }
 
   private TestLocationStorage() {
   }

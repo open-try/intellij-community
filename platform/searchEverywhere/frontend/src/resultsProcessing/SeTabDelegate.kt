@@ -24,14 +24,14 @@ import com.intellij.platform.searchEverywhere.utils.initAsync
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.*
-import org.jetbrains.annotations.ApiStatus.Internal
+import org.jetbrains.annotations.ApiStatus
 import org.jetbrains.annotations.Nls
-import kotlin.collections.flatMap
-import kotlin.collections.plus
-import kotlin.collections.toSet
 
+/**
+ * Delegate for managing the Search Everywhere tab's functionality and results processing.
+ */
 @OptIn(ExperimentalCoroutinesApi::class)
-@Internal
+@ApiStatus.Experimental
 class SeTabDelegate(
   val project: Project?,
   private val session: SeSession,
@@ -321,21 +321,24 @@ class SeTabDelegate(
       initEvent: AnActionEvent,
       session: SeSession,
       logLabel: String,
-    ): Providers {
+    ): Providers = coroutineScope {
       val projectId = project?.projectId()
       val dataContextId = readAction {
         initEvent.dataContext.rpcId()
       }
 
-      val hasWildcard = providerIds.any { it.isWildcard }
+
+      ensureActive()
       val localProvidersHolder = SeFrontendService.getInstance(project).localProvidersHolder
-                                 ?: error("Local providers holder is not initialized")
+                                 ?: run {
+                                   SeLog.error("Local providers holder is not initialized")
+                                   return@coroutineScope Providers(emptyMap(), null, emptySet())
+                                 }
 
       val localFactories = SeItemsProviderFactory.EP_NAME.extensionList.associateBy { SeProviderId(it.id) }
       val frontendOnlyIds = localFactories.filter { it.value is SeFrontendOnlyItemsProviderFactory }.map { it.key }.toSet()
 
       val availableRemoteProviders = if (projectId != null) SeRemoteApi.getInstance().getAvailableProviderIds(projectId, session, dataContextId) else null
-      val adaptedRemoteProviderItemsAreFetchable = availableRemoteProviders?.isFetchable == true
 
       val essentialRemoteProviderIds = availableRemoteProviders?.essential?.filter {
         !frontendOnlyIds.contains(it)
@@ -345,26 +348,30 @@ class SeTabDelegate(
         !frontendOnlyIds.contains(it)
       }?.toSet() ?: emptySet()
 
-      val adaptedAndAvailableToRenderRemoteProviderIds = if (adaptedRemoteProviderItemsAreFetchable) {
-        availableRemoteProviders.adapted.filter {
-          !frontendOnlyIds.contains(it) && localProvidersHolder.legacyAllTabContributors.containsKey(it)
-        }
-      }
-      else emptySet()
+
+      val isAllTab = providerIds.any { it.isWildcard }
+
+      val adaptedAndAvailableToRenderRemoteProviderIds =
+        (if (isAllTab) availableRemoteProviders?.adaptedWithPresentationOrFetchable(localProvidersHolder.legacyContributors.allTab.keys)?.allTab
+        else availableRemoteProviders?.adaptedWithPresentationOrFetchable(localProvidersHolder.legacyContributors.separateTab.keys)?.separateTab?.map { it.providerId })
+          ?.filter {
+            !frontendOnlyIds.contains(it)
+          }
+        ?: emptyList()
 
       val nonEssentialRemoteProviderIds = nonEssentialNonAdaptedRemoteProviderIds + adaptedAndAvailableToRenderRemoteProviderIds
 
-      val remoteProviderIds = essentialRemoteProviderIds.union(nonEssentialRemoteProviderIds).filter { hasWildcard || providerIds.contains(it) }.toSet()
+      val remoteProviderIds = essentialRemoteProviderIds.union(nonEssentialRemoteProviderIds).filter { isAllTab || providerIds.contains(it) }.toSet()
 
       // If we have it on BE, we use the BE provider.
       // This is needed because extensions are available on both sides in the monolith (BE and FE)
       // even if the extension was registered on BE only.
       // It's better to treat FE provider as BE in monolith than treat BE provider as FE in split mode.
       val localProviderIds =
-        (if (hasWildcard) localFactories.keys else providerIds) - remoteProviderIds
+        (if (isAllTab) localFactories.keys else providerIds) - remoteProviderIds
 
       val localProviders = localProviderIds.mapNotNull { providerId ->
-        localProvidersHolder.get(providerId, hasWildcard)?.let {
+        localProvidersHolder.get(providerId, isAllTab)?.let {
           providerId to it
         }
       }.toMap()
@@ -378,7 +385,7 @@ class SeTabDelegate(
                                                remoteProviderIdToName,
                                                session,
                                                dataContextId,
-                                               hasWildcard,
+                                               isAllTab,
                                                essentialRemoteProviderIds.filter { remoteProviderIdToName.containsKey(it) }.toSet())
       }
       else null
@@ -387,7 +394,7 @@ class SeTabDelegate(
                           (frontendProvidersFacade?.essentialProviderIds ?: emptySet())
 
       SeLog.log(SeLog.THROTTLING) { "Essential contributors for $logLabel tab : " + allEssentials.joinToString(", ") { it.value } }
-      return Providers(localProviders, frontendProvidersFacade, allEssentials)
+      Providers(localProviders, frontendProvidersFacade, allEssentials)
     }
   }
 }

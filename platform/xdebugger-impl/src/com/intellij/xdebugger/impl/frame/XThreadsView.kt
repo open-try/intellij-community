@@ -5,15 +5,18 @@ import com.intellij.openapi.application.EDT
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.NlsSafe
 import com.intellij.platform.debugger.impl.rpc.XDebugSessionApi
+import com.intellij.platform.debugger.impl.shared.proxy.XDebugSessionProxy
 import com.intellij.ui.AutoScrollToSourceHandler
 import com.intellij.ui.SimpleColoredComponent
 import com.intellij.ui.SimpleTextAttributes
 import com.intellij.util.concurrency.annotations.RequiresEdt
 import com.intellij.xdebugger.XDebugSession
+import com.intellij.xdebugger.XDebuggerBundle
 import com.intellij.xdebugger.frame.*
 import com.intellij.xdebugger.frame.presentation.XRegularValuePresentation
 import com.intellij.xdebugger.frame.presentation.XValuePresentation
 import com.intellij.xdebugger.impl.actions.XDebuggerActions.THREADS_VIEW_POPUP_GROUP
+import com.intellij.xdebugger.impl.proxy.asProxy
 import com.intellij.xdebugger.impl.ui.DebuggerUIUtil
 import com.intellij.xdebugger.impl.ui.tree.XDebuggerTree
 import com.intellij.xdebugger.impl.ui.tree.XDebuggerTreePanel
@@ -45,6 +48,8 @@ class XThreadsView(project: Project, session: XDebugSessionProxy) : XDebugView()
   private val treePanel = XDebuggerTreePanel(project, session.editorsProvider, this, null, THREADS_VIEW_POPUP_GROUP, null)
 
   init {
+    tree.emptyText.text = XDebuggerBundle.message("debugger.threads.not.available")
+
     object : AutoScrollToSourceHandler() {
       override fun isAutoScrollMode(): Boolean = true
 
@@ -81,6 +86,7 @@ class XThreadsView(project: Project, session: XDebugSessionProxy) : XDebugView()
         .debounce(200)
         .collectLatest {
           withContext(Dispatchers.EDT) {
+            DebuggerUIUtil.freezePaintingToReduceFlickering(treePanel.contentComponent)
             if (panel.isShowing) {
               tree.setRoot(XThreadsRootNode(tree, session), false)
             }
@@ -120,19 +126,10 @@ class XThreadsView(project: Project, session: XDebugSessionProxy) : XDebugView()
     if (event == SessionEvent.BEFORE_RESUME) {
       return
     }
-    if (!session.hasSuspendContext()) {
-      requestClear()
-      return
-    }
     // Do not refresh a tree on a FRAME_CHANGED event
     // so that selecting stack frames does not collapse a thread node.
     if (event == SessionEvent.FRAME_CHANGED) {
       return
-    }
-    if (event == SessionEvent.PAUSED) {
-      // clear immediately
-      cancelClear()
-      clear()
     }
     requestRebuild()
   }
@@ -140,27 +137,36 @@ class XThreadsView(project: Project, session: XDebugSessionProxy) : XDebugView()
   override fun dispose() {
   }
 
-  class ThreadsContainer(val session: XDebugSessionProxy) : XValueContainer() {
+  class ThreadsContainer(private val session: XDebugSessionProxy) : XValueContainer() {
     override fun computeChildren(node: XCompositeNode) {
-      session.computeExecutionStacks {
-        object : XSuspendContext.XExecutionStackContainer {
-          override fun errorOccurred(errorMessage: String) {
-          }
-
-          override fun addExecutionStack(executionStacks: List<XExecutionStack>, last: Boolean) {
-            val children = XValueChildrenList()
-            executionStacks.map { FramesContainer(it) }.forEach { children.add("", it) }
-            node.addChildren(children, last)
-          }
+      val container = object : XSuspendContext.XExecutionStackContainer {
+        override fun errorOccurred(errorMessage: String) {
         }
+
+        override fun addExecutionStack(executionStacks: List<XExecutionStack>, last: Boolean) {
+          val children = XValueChildrenList()
+          executionStacks.map { FramesContainer(it, session) }.forEach { children.add("", it) }
+          node.addChildren(children, last)
+        }
+      }
+      if (session.hasSuspendContext()) {
+        session.computeExecutionStacks(container)
+      } else {
+        session.computeRunningExecutionStacks(container)
       }
     }
   }
 
-  class FramesContainer(val executionStack: XExecutionStack) : XValue() {
+  class FramesContainer(val executionStack: XExecutionStack, private val session: XDebugSessionProxy) : XValue() {
     override fun computeChildren(node: XCompositeNode) {
+      if (!session.hasSuspendContext()) {
+        node.setMessage(XDebuggerBundle.message("debugger.frames.not.available"))
+        return
+      }
+
       executionStack.computeStackFrames(0, object : XExecutionStack.XStackFrameContainer {
         override fun errorOccurred(errorMessage: String) {
+          node.setMessage(errorMessage)
         }
 
         override fun addStackFrames(stackFrames: List<XStackFrame>, last: Boolean) {
@@ -173,6 +179,12 @@ class XThreadsView(project: Project, session: XDebugSessionProxy) : XDebugView()
 
     override fun computePresentation(node: XValueNode, place: XValuePlace) {
       node.setPresentation(executionStack.icon, XRegularValuePresentation(executionStack.displayName, null, ""), true)
+    }
+
+    private fun XCompositeNode.setMessage(text: String) {
+      // remove temporary loading message nodes
+      addChildren(XValueChildrenList.EMPTY, true)
+      setMessage(text, null, SimpleTextAttributes.GRAYED_ATTRIBUTES, null)
     }
   }
 

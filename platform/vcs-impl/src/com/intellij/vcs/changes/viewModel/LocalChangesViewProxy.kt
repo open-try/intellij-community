@@ -2,11 +2,8 @@
 package com.intellij.vcs.changes.viewModel
 
 import com.intellij.openapi.vcs.FilePath
-import com.intellij.openapi.vcs.changes.Change
-import com.intellij.openapi.vcs.changes.CommitChangesViewWithToolbarPanel
-import com.intellij.openapi.vcs.changes.InclusionModel
+import com.intellij.openapi.vcs.changes.*
 import com.intellij.openapi.vcs.changes.ui.ChangesBrowserNode.UNVERSIONED_FILES_TAG
-import com.intellij.openapi.vcs.changes.ui.ChangesListView
 import com.intellij.openapi.vcs.changes.ui.VcsTreeModelData.*
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.util.ui.tree.TreeUtil.*
@@ -18,8 +15,13 @@ import javax.swing.tree.TreePath
 /**
  * Suitable for the monolith mode only.
  */
-internal class LocalChangesViewProxy(override val panel: CommitChangesViewWithToolbarPanel, scope: CoroutineScope) : ChangesViewProxy(scope) {
+internal class LocalChangesViewProxy(
+  override val panel: CommitChangesViewWithToolbarPanel,
+  scope: CoroutineScope,
+) : ChangesViewProxy(panel.project, scope) {
   override val inclusionChanged = MutableSharedFlow<Unit>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+
+  override val diffRequests = panel.diffRequests
 
   override fun setInclusionModel(model: InclusionModel?) {
     panel.changesView.setInclusionModel(model)
@@ -37,7 +39,7 @@ internal class LocalChangesViewProxy(override val panel: CommitChangesViewWithTo
   override fun isModelUpdateInProgress(): Boolean = panel.changesView.isModelUpdateInProgress
 
   override fun scheduleRefreshNow(callback: Runnable?) {
-    panel.scheduleRefreshNow(callback)
+    panel.scheduleRefreshNow(if (callback == null) null else callback::run)
   }
 
   override fun scheduleDelayedRefresh() {
@@ -50,10 +52,6 @@ internal class LocalChangesViewProxy(override val panel: CommitChangesViewWithTo
 
   override fun resetViewImmediatelyAndRefreshLater() {
     panel.resetViewImmediatelyAndRefreshLater()
-  }
-
-  override fun setShowCheckboxes(value: Boolean) {
-    panel.changesView.isShowCheckboxes = value
   }
 
   override fun getDisplayedChanges(): List<Change> = all(panel.changesView).userObjects(Change::class.java)
@@ -92,5 +90,12 @@ internal class LocalChangesViewProxy(override val panel: CommitChangesViewWithTo
     selectPaths(panel.changesView, paths)
   }
 
-  override fun getTree(): ChangesListView = panel.changesView
+  override fun hasContentToDiff(): Boolean =
+    ChangesViewDiffPreviewHandler.iterateSelectedChanges(panel.changesView).isNotEmpty
+
+  override fun getDiffRequestProducers(selectedOnly: Boolean) =
+    ChangesViewDiffPreviewHandler.collectDiffProducers(panel.changesView, selectedOnly)
+
+  override fun createDiffPreviewProcessor(isInEditor: Boolean): ChangesViewDiffPreviewProcessor =
+    ChangesViewDiffPreviewProcessor(panel.changesView, isInEditor).also { it.subscribeOnAllowExcludeFromCommit() }
 }

@@ -21,6 +21,8 @@ interface ChangesViewApi : RemoteApi<Unit> {
    */
   suspend fun getBackendChangesViewEvents(projectId: ProjectId): Flow<BackendChangesViewEvent>
 
+  suspend fun canExcludeFromCommit(projectId: ProjectId): Flow<Boolean>
+
   /**
    * Notifies when refresh request with [BackendChangesViewEvent.RefreshRequested.refreshCounter] is performed.
    */
@@ -35,6 +37,8 @@ interface ChangesViewApi : RemoteApi<Unit> {
    * @see [com.intellij.vcs.commit.CommitMode.useCommitToolWindow]
    */
   suspend fun isCommitToolWindowEnabled(projectId: ProjectId): Flow<Boolean>
+
+  suspend fun synchronizeInclusion(projectId: ProjectId)
 
   companion object {
     suspend fun getInstance(): ChangesViewApi = RemoteApiProviderService.resolve(remoteApiDescriptor<ChangesViewApi>())

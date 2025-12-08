@@ -4,7 +4,8 @@
 package org.jetbrains.intellij.build.impl
 
 import com.intellij.openapi.util.JDOMUtil
-import com.intellij.platform.plugins.parser.impl.elements.ModuleLoadingRule
+import com.intellij.platform.plugins.parser.impl.elements.ModuleLoadingRuleValue
+import com.intellij.platform.plugins.parser.impl.elements.xmlValue
 import io.opentelemetry.api.trace.Span
 import org.jdom.Element
 import org.jetbrains.intellij.build.BuildContext
@@ -19,19 +20,6 @@ import org.jetbrains.intellij.build.impl.PlatformJarNames.PRODUCT_JAR
 import org.jetbrains.intellij.build.isOptionalLoadingRule
 import org.jetbrains.intellij.build.productLayout.buildProductContentXml
 import org.jetbrains.jps.model.java.JavaSourceRootType
-
-// Contrary to what it looks like, this is not a step back.
-// Previously, it was specified in PLATFORM_IMPLEMENTATION_MODULES/PLATFORM_API_MODULES.
-// Once the shape of the extracted module becomes fully discernible,
-// we can consider ways to improve `pluginAuto` and eliminate the need for an explicit declaration here.
-internal val PRODUCT_MODULE_IMPL_COMPOSITION = java.util.Map.of(
-  "intellij.rider", listOf(
-  "intellij.platform.debugger.modulesView"
-),
-  "intellij.platform.rpc.backend", listOf(
-  "fleet.rpc.server",
-)
-)
 
 internal fun getProductModuleJarName(moduleName: String, context: BuildContext, frontendModuleFilter: FrontendModuleFilter): String {
   return when {
@@ -94,7 +82,7 @@ internal fun processAndGetProductPluginContentModules(
   val moduleItems = LinkedHashSet<ModuleItem>()
   filterAndProcessContentModules(rootElement = element, pluginMainModuleName = null, context = context) { moduleElement, moduleName, loadingRule ->
     processProductModule(
-      isEmbedded = loadingRule != null && loadingRule == ModuleLoadingRule.EMBEDDED.name.lowercase(),
+      isEmbedded = loadingRule != null && loadingRule == ModuleLoadingRuleValue.EMBEDDED.xmlValue,
       moduleName = moduleName,
       moduleElement = moduleElement,
       frontendModuleFilter = frontendModuleFilter,
@@ -181,13 +169,6 @@ private fun processProductModule(
       includeDependencies = includeDependencies,
     )
   )
-  PRODUCT_MODULE_IMPL_COMPOSITION.get(moduleName)?.let { list ->
-    list
-      .filter { !context.productProperties.productLayout.productImplementationModules.contains(it) }
-      .mapTo(result) { subModuleName ->
-        ModuleItem(moduleName = subModuleName, relativeOutputFile = relativeOutFile, reason = ModuleIncludeReasons.PRODUCT_MODULES, moduleSet = moduleSet)
-      }
-  }
 
   // We do not embed the module descriptor because scrambling can rename classes.
   //
@@ -213,6 +194,11 @@ private fun processProductModule(
 
 private fun isModuleCloseSource(moduleName: String, context: BuildContext): Boolean {
   if (moduleName.endsWith(".resources") || moduleName.endsWith(".icons") || moduleName.startsWith(LIB_MODULE_PREFIX)) {
+    return false
+  }
+
+  // todo will be removed on the next stage
+  if (moduleName == "fleet.protocol" || moduleName.startsWith("fleet.rpc.")) {
     return false
   }
 

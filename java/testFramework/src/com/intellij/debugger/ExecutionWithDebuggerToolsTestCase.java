@@ -30,13 +30,13 @@ import com.intellij.ui.classFilter.ClassFilter;
 import com.intellij.util.SmartList;
 import com.intellij.util.TimeoutUtil;
 import com.intellij.util.lang.CompoundRuntimeException;
+import com.intellij.util.ui.EDT;
 import com.intellij.util.ui.EdtInvocationManager;
 import com.intellij.util.ui.UIUtil;
 import com.intellij.xdebugger.XDebugSession;
 import com.intellij.xdebugger.XDebugSessionListener;
 import com.intellij.xdebugger.frame.XSuspendContext;
 import com.intellij.xdebugger.impl.XSteppingSuspendContext;
-import com.intellij.xdebugger.impl.frame.XDebugSessionProxyKeeperKt;
 import com.sun.jdi.Method;
 import com.sun.jdi.request.StepRequest;
 import org.jetbrains.annotations.NotNull;
@@ -174,7 +174,7 @@ public abstract class ExecutionWithDebuggerToolsTestCase extends ExecutionTestCa
     JavaDebugProcess process = debugProcess.getXdebugProcess();
     assert (process != null);
     XDebugSession xSession = process.getSession();
-    XDebugSessionProxyKeeperKt.asProxy(xSession).addSessionListener(new XDebugSessionListener() {
+    xSession.addSessionListener(new XDebugSessionListener() {
       @Override
       public void sessionPaused() {
         SuspendContextImpl suspendContext = jvmSession.getContextManager().getContext().getSuspendContext();
@@ -185,7 +185,7 @@ public abstract class ExecutionWithDebuggerToolsTestCase extends ExecutionTestCa
           myBreakpointProvider.pausedWrapper(suspendContext);
         }
       }
-    }, xSession.getProject());
+    });
   }
 
   /**
@@ -322,7 +322,7 @@ public abstract class ExecutionWithDebuggerToolsTestCase extends ExecutionTestCa
   }
 
   protected void pumpSwingThread() {
-    LOG.assertTrue(SwingUtilities.isEventDispatchThread());
+    LOG.assertTrue(EDT.isCurrentThreadEdt());
 
     InvokeRatherLaterRequest request = myRatherLaterRequests.get(0);
     request.invokesN++;
@@ -377,7 +377,7 @@ public abstract class ExecutionWithDebuggerToolsTestCase extends ExecutionTestCa
       });
     }
     else {
-      if (!SwingUtilities.isEventDispatchThread()) {
+      if (!EDT.isCurrentThreadEdt()) {
         try {
           EdtInvocationManager.getInstance().invokeAndWait(() -> pumpSwingThread());
         }
@@ -577,7 +577,7 @@ public abstract class ExecutionWithDebuggerToolsTestCase extends ExecutionTestCa
         comment.done();
       }
     };
-    if (!SwingUtilities.isEventDispatchThread()) {
+    if (!EDT.isCurrentThreadEdt()) {
       DebuggerInvocationUtil.invokeAndWait(myProject, runnable, ModalityState.defaultModalityState());
     }
     else {

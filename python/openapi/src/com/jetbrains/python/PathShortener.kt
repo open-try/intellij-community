@@ -8,9 +8,11 @@ import com.intellij.platform.eel.*
 import com.intellij.platform.eel.path.EelPath
 import com.intellij.platform.eel.provider.asEelPath
 import com.intellij.platform.eel.provider.getEelDescriptor
+import com.intellij.platform.eel.provider.toEelApi
 import com.jetbrains.python.PathShortener.Companion.create
 import org.jetbrains.annotations.ApiStatus
 import java.nio.file.Path
+import kotlin.io.path.pathString
 
 /**
  * Replaces homepath with tilda and some well-known Windows vars as well.
@@ -58,10 +60,13 @@ class PathShortener private constructor(private val map: List<Pair<EelPath, Stri
   }
 
   /**
-   * Convert [path] to user-readable string replacing home with tild and so on
+   * Convert [path] to user-readable string replacing home with tilda and so on
    */
   fun toString(path: Path): @NlsSafe String {
     val pathDescriptor = path.getEelDescriptor()
+    if (!path.isAbsolute) { // eelPath doesn't support relative paths
+      return path.pathString
+    }
     var result = path.asEelPath().toString()
     for ((key, replaceWith) in map) {
       assert(pathDescriptor == key.descriptor) { "path is on $pathDescriptor, replacer is on ${key.descriptor}" }

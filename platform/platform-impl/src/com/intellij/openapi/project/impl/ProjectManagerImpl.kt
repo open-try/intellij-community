@@ -106,6 +106,7 @@ import org.jetbrains.annotations.NonNls
 import org.jetbrains.annotations.TestOnly
 import org.jetbrains.annotations.VisibleForTesting
 import java.io.IOException
+import java.nio.file.Files
 import java.nio.file.InvalidPathException
 import java.nio.file.LinkOption
 import java.nio.file.Path
@@ -257,13 +258,13 @@ open class ProjectManagerImpl : ProjectManagerEx(), Disposable {
   protected fun addToOpened(project: Project): Boolean {
     assert(!project.isDisposed) { "Must not open already disposed project" }
     synchronized(lock) {
-      if (isProjectOpened(project)) {
+      if (openProjectByHash.put(project.locationHash, project) != null) {
         return false
       }
       openProjects += project
     }
     updateTheOnlyProjectField()
-    openProjectByHash.put(project.locationHash, project)
+    LOG.info("Project ${project.name} was added to the list of open projects")
     return true
   }
 
@@ -694,7 +695,11 @@ open class ProjectManagerImpl : ProjectManagerEx(), Disposable {
                 throw CancellationException("beforeOpen callback returned false")
               }
 
-              configureWorkspace(project, projectIdentityFile, options)
+              val projectStoreBaseDir = projectIdentityFile.takeIf { Files.isDirectory(it) }
+                                        ?: options.projectRootDir
+              if (projectStoreBaseDir != null) {
+                configureWorkspace(project, projectStoreBaseDir, options)
+              }
             }
 
             if (Registry.`is`("ide.create.project.root.entity") && options.projectRootDir != null) {
@@ -707,7 +712,7 @@ open class ProjectManagerImpl : ProjectManagerEx(), Disposable {
             }
 
             if (!addToOpened(project)) {
-              throw CancellationException("project is already opened")
+              throw CancellationException("project name=${project.name}, locationHash=${project.locationHash} is already opened")
             }
 
             // The project is loaded and is initialized, project services and components can be accessed.

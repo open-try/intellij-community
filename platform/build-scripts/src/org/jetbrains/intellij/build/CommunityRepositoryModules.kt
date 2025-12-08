@@ -24,7 +24,6 @@ import org.jetbrains.intellij.build.kotlin.CommunityKotlinPluginBuilder
 import org.jetbrains.intellij.build.python.PythonCommunityPluginModules
 import org.jetbrains.intellij.build.telemetry.TraceManager.spanBuilder
 import org.jetbrains.intellij.build.telemetry.use
-import org.jetbrains.jps.model.library.JpsOrderRootType
 import java.net.URI
 import java.nio.file.Path
 import java.util.Locale
@@ -215,7 +214,6 @@ object CommunityRepositoryModules {
     plugin("intellij.repository.search") { spec ->
       spec.withModule("intellij.maven.model", relativeJarPath = "maven-model.jar")
       spec.withProjectLibrary("package-search-api-client")
-      spec.withProjectLibrary("kotlinx-document-store-mvstore")
     },
     pluginAuto("intellij.java.jshell") { spec ->
       spec.withModule("intellij.java.jshell.protocol", "jshell-protocol.jar")
@@ -454,8 +452,6 @@ object CommunityRepositoryModules {
       spec.withModule("intellij.android.execution.common", "android.jar")
       spec.withModule("intellij.android.avd", "android.jar")
 
-      spec.withModule("intellij.android.safemode", "android.jar")
-
       spec.withModule("intellij.android.preview-fast-compile", "android.jar")
       spec.withModule("intellij.android.completion", "android.jar")
 
@@ -508,8 +504,6 @@ object CommunityRepositoryModules {
       //spec.withModuleLibrary("compose-desktop-ui", "intellij.android.adt.ui.compose", "")
       //spec.withModuleLibrary("skiko", "intellij.android.adt.ui.compose", "")
 
-      spec.withProjectLibrary("asm-tools")
-
       val ffmpegVersion = "6.0-1.5.9"
       val javacppVersion = "1.5.9"
 
@@ -529,18 +523,17 @@ object CommunityRepositoryModules {
           spec.withModuleLibrary(javacppLibraryName, "intellij.android.streaming", "${javacppLibraryName}-$javacppVersion.jar")
         }
         else {
+          val streamingModuleName = "intellij.android.streaming"
+
           spec.withGeneratedPlatformResources(supportedOs, supportedArch, supportedLibc) { targetDir, context ->
-            val streamingModule = context.projectModel.project.findModuleByName("intellij.android.streaming")!!
-            val ffmpegLibrary = streamingModule.libraryCollection.findLibrary(ffmpegLibraryName)!!
-            val javacppLibrary = streamingModule.libraryCollection.findLibrary(javacppLibraryName)!!
             val libDir = targetDir.resolve("lib")
 
-            copyFileToDir(ffmpegLibrary.getFiles(JpsOrderRootType.COMPILED)[0].toPath(), libDir)
-            copyFileToDir(javacppLibrary.getFiles(JpsOrderRootType.COMPILED)[0].toPath(), libDir)
+            copyFileToDir(context.findLibraryRoots(ffmpegLibraryName, moduleLibraryModuleName = streamingModuleName).single(), libDir)
+            copyFileToDir(context.findLibraryRoots(javacppLibraryName, moduleLibraryModuleName = streamingModuleName).single(), libDir)
           }
 
-          spec.excludeModuleLibrary(ffmpegLibraryName, "intellij.android.streaming")
-          spec.excludeModuleLibrary(javacppLibraryName, "intellij.android.streaming")
+          spec.excludeModuleLibrary(ffmpegLibraryName, streamingModuleName)
+          spec.excludeModuleLibrary(javacppLibraryName, streamingModuleName)
         }
       }
 
@@ -695,6 +688,7 @@ private suspend fun copyAnt(mainModule: String, pluginDir: Path, context: BuildC
         path = antTargetFile,
         data = libraryData,
         libraryFile = source.file,
+        canonicalLibraryPath = context.paths.communityHomeDir.relativize(source.file).toString(),
         hash = 0,
         size = 0,
         relativeOutputFile = "dist/ant.jar",

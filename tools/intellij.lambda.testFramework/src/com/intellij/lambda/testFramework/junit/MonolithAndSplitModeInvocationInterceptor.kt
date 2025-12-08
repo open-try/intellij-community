@@ -1,16 +1,19 @@
 package com.intellij.lambda.testFramework.junit
 
 import com.intellij.ide.starter.coroutine.perTestSupervisorScope
-import com.intellij.lambda.testFramework.utils.BackgroundRunWithLambda
-import com.jetbrains.rd.util.printlnError
+import com.intellij.lambda.testFramework.starter.IdeInstance
+import com.intellij.lambda.testFramework.utils.IdeWithLambda
+import com.intellij.lambda.testFramework.utils.IdeLambdaStarter.toLambdaParams
+import com.intellij.remoteDev.tests.impl.LambdaTestHost
+import com.intellij.remoteDev.tests.modelGenerated.LambdaRdTestActionParameters
+import com.intellij.remoteDev.tests.modelGenerated.LambdaRdTestSession
+import com.intellij.tools.ide.util.common.logOutput
 import kotlinx.coroutines.runBlocking
-import org.junit.jupiter.api.TestFactory
-import org.junit.jupiter.api.TestTemplate
 import org.junit.jupiter.api.extension.ExtensionContext
 import org.junit.jupiter.api.extension.InvocationInterceptor
 import org.junit.jupiter.api.extension.ReflectiveInvocationContext
-import org.junit.jupiter.params.ParameterizedTest
 import java.lang.reflect.Method
+import kotlin.reflect.KClass
 
 /**
  * Wrap test method invocations in lambda that later called on the IDE side.
@@ -38,56 +41,52 @@ open class MonolithAndSplitModeInvocationInterceptor : InvocationInterceptor {
     return intercept<T?>(invocation, invocationContext)
   }
 
-  override fun interceptBeforeEachMethod(
-    invocation: InvocationInterceptor.Invocation<Void?>,
-    invocationContext: ReflectiveInvocationContext<Method?>,
-    extensionContext: ExtensionContext?,
-  ) {
-    intercept<Void?>(invocation, invocationContext)
-  }
-
   private fun <T> intercept(invocation: InvocationInterceptor.Invocation<T?>, invocationContext: ReflectiveInvocationContext<Method?>): T? {
-    if (invocationContext.arguments.any { it::class == BackgroundRunWithLambda::class }) {
-      System.err.println("Test ${invocationContext.executable?.name} has ${BackgroundRunWithLambda::class.qualifiedName} parameter. Test is expected to use it directly.")
-      return invocation.proceed()
-    }
-
-    val allowedAnnotations = listOf(TestTemplate::class, TestFactory::class, ParameterizedTest::class)
-
-    val isAllowedTest = invocationContext.executable!!.annotations.any {
-      it.annotationClass in allowedAnnotations
-    }
-
     val fullMethodName = "${invocationContext.targetClass.name}.${invocationContext.executable?.name}"
 
-    if (!isAllowedTest) {
-      printlnError("Method $fullMethodName will not be executed inside IDE. " +
-                   "Allowed annotations for test method ${allowedAnnotations.map { it.simpleName }}")
+    logOutput("Executing test method \"$fullMethodName\" inside IDE in mode ${IdeInstance.currentIdeMode} with arguments: ${argumentsToString(invocationContext.arguments)}")
+
+    if (invocationContext.arguments.any { it::class == IdeWithLambda::class }) {
+      logOutput("Test \"$fullMethodName\" has ${IdeWithLambda::class.qualifiedName} parameter. Test is expected to use it directly.")
+
+      // executing the code from the test as is (it will invoke lambda execution in IDE itself)
       return invocation.proceed()
     }
 
     @Suppress("RAW_RUN_BLOCKING")
     runBlocking(perTestSupervisorScope.coroutineContext) {
-      println("Executing test method $fullMethodName inside IDE in mode ${IdeInstance.currentIdeMode}")
-
-      IdeInstance.ideBackgroundRun.runNamedLambda(InjectedLambda::class,
-                                                  params = mapOf(
+      // TODO: use serialized lambda invocation
+      IdeInstance.ide.runNamedLambda(InjectedLambda::class,
+                                     params = mapOf(
                                                     "testClass" to (invocationContext.targetClass.name ?: ""),
                                                     "testMethod" to (invocationContext.executable?.name ?: ""),
-                                                    "methodArguments" to argumentsToString(invocationContext.arguments)
+                                                    "methodArguments" to serializeArguments(fullMethodName, invocationContext.arguments)
                                                   ))
     }
+
+    // the code from the test is executed on IDE side
     invocation.skip()
     return null
   }
 }
 
+internal suspend fun IdeWithLambda.runNamedLambda(namedLambdaClass: KClass<out LambdaTestHost.Companion.NamedLambda<*>>, params: Map<String, String> = emptyMap()) {
+  return rdSession.runNamedLambda(namedLambdaClass, params)
+}
+
+internal suspend fun IdeWithLambda.runNamedLambdaInBackend(namedLambdaClass: KClass<out LambdaTestHost.Companion.NamedLambda<*>>, params: Map<String, String> = emptyMap()) {
+  return (backendRdSession ?: rdSession).runNamedLambda(namedLambdaClass, params)
+}
+
+internal suspend fun LambdaRdTestSession.runNamedLambda(namedLambdaClass: KClass<out LambdaTestHost.Companion.NamedLambda<*>>, params: Map<String, String> = emptyMap()) {
+  val protocol = this.protocol
+                 ?: error("RD Protocol is not initialized for session. Make sure the IDE connection is established before running tests.")
+  runLambda.startSuspending(protocol.lifetime,
+                            LambdaRdTestActionParameters(namedLambdaClass.java.canonicalName, params.toLambdaParams()))
+}
 
 internal const val ARGUMENTS_SEPARATOR = "], ["
 
 internal fun argumentsToString(arguments: List<Any>): String = arguments.joinToString(ARGUMENTS_SEPARATOR, prefix = "[", postfix = "]") { it.toString() }
-
-internal fun argumentsFromString(argumentsString: String): List<Any> = argumentsString.removePrefix("[").removeSuffix("]")
-  .split(ARGUMENTS_SEPARATOR).map { it.trim() }
 
 

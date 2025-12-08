@@ -1,5 +1,6 @@
 RegExpSupport
 aether-dependency-resolver
+android-customization
 android/adt-testutils
 android/adt-ui
 android/adt-ui-compose
@@ -133,7 +134,6 @@ android/intellij.android.device.tests
 android/intellij.android.projectStructureTests
 android/intellij.android.testutils
 android/jps-model
-android/kotlin-integration
 android/layout-inspector
 android/layout-inspector/gradle
 android/layout-ui
@@ -183,7 +183,6 @@ android/project-system-integration-tests
 android/render-resources
 android/rendering
 android/room
-android/safemode
 android/screenshot-testing
 android/screenshot-testing/gradle
 android/sdk-updates
@@ -330,6 +329,7 @@ java/remote-servers/api
 java/remote-servers/impl
 java/structuralsearch-java
 java/testFramework
+java/testFramework/backend
 java/testFramework/shared
 java/typeMigration
 java/unscramble
@@ -414,11 +414,14 @@ libraries/jcip
 libraries/jediterm-core
 libraries/jediterm-ui
 libraries/jettison
+libraries/jgoodies/common
+libraries/jgoodies/forms
 libraries/jsonpath
 libraries/jsoup
 libraries/jsvg
 libraries/junit4
 libraries/junit5
+libraries/junit5-jupiter
 libraries/junit5-launcher
 libraries/junit5-params
 libraries/junit5-pioneer
@@ -429,10 +432,15 @@ libraries/kotlin/reflect
 libraries/kotlin/test
 libraries/kotlin/test-assertions-core-jvm
 libraries/kotlinx/collections-immutable
+libraries/kotlinx/coroutines/core
+libraries/kotlinx/coroutines/debug
+libraries/kotlinx/coroutines/guava
 libraries/kotlinx/coroutines/slf4j
+libraries/kotlinx/coroutines/test
 libraries/kotlinx/datetime
 libraries/kotlinx/document-store-mvstore
 libraries/kotlinx/html
+libraries/kotlinx/serialization/cbor
 libraries/kotlinx/serialization/core
 libraries/kotlinx/serialization/json
 libraries/kotlinx/serialization/protobuf
@@ -451,6 +459,7 @@ libraries/mockito
 libraries/mvstore
 libraries/opencsv
 libraries/oro-matcher
+libraries/plexus-utils
 libraries/proxy-vole
 libraries/pty4j
 libraries/rd-text
@@ -461,6 +470,7 @@ libraries/snakeyaml-engine
 libraries/sshd-osgi
 libraries/sshj
 libraries/stream
+libraries/swingx
 libraries/system-stubs-jupiter
 libraries/testcontainers
 libraries/testng
@@ -828,6 +838,7 @@ platform/xdebugger-impl/backend
 platform/xdebugger-impl/frontend
 platform/xdebugger-impl/rpc
 platform/xdebugger-impl/shared
+platform/xdebugger-impl/ui
 platform/xdebugger-testFramework
 plugins/ByteCodeViewer
 plugins/IntelliLang
@@ -1161,6 +1172,7 @@ plugins/kotlin/gradle/code-insight-common
 plugins/kotlin/gradle/code-insight-groovy
 plugins/kotlin/gradle/code-insight-groovy/tests.k2
 plugins/kotlin/gradle/code-insight-toml
+plugins/kotlin/gradle/code-insight-toml/k2
 plugins/kotlin/gradle/gradle
 plugins/kotlin/gradle/gradle-java
 plugins/kotlin/gradle/gradle-java/k1
@@ -1194,6 +1206,7 @@ plugins/kotlin/injection/k2
 plugins/kotlin/injection/k2/tests
 plugins/kotlin/inspections
 plugins/kotlin/inspections-fe10
+plugins/kotlin/intellij.kotlin.base.test
 plugins/kotlin/internal
 plugins/kotlin/j2k/k1.new
 plugins/kotlin/j2k/k1.new.post-processing

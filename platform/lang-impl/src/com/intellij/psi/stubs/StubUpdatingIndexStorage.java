@@ -1,6 +1,7 @@
 // Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.psi.stubs;
 
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.fileTypes.FileType;
 import com.intellij.openapi.progress.ProcessCanceledException;
@@ -10,6 +11,7 @@ import com.intellij.util.indexing.impl.InputDataDiffBuilder;
 import com.intellij.util.indexing.impl.MapReduceIndexMappingException;
 import com.intellij.util.indexing.impl.storage.TransientFileContentIndex;
 import com.intellij.util.indexing.storage.VfsAwareIndexStorageLayout;
+import com.intellij.util.io.IOUtil;
 import org.jetbrains.annotations.ApiStatus.Internal;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -25,7 +27,8 @@ public final class StubUpdatingIndexStorage extends TransientFileContentIndex<In
   /** Cached {@code StubIndex.getInstance()} */
   private StubIndexImpl myCachedStubIndex;
 
-  private final @NotNull CompositeBinaryBuilderMap myCompositeBinaryBuilderMap = new CompositeBinaryBuilderMap(FileBasedIndex.USE_IN_MEMORY_INDEX);
+  private final @NotNull CompositeBinaryBuilderMap myCompositeBinaryBuilderMap =
+    new CompositeBinaryBuilderMap(FileBasedIndex.USE_IN_MEMORY_INDEX);
   private final @NotNull SerializationManagerEx mySerializationManager;
 
   StubUpdatingIndexStorage(@NotNull FileBasedIndexExtension<Integer, SerializedStubTree> extension,
@@ -149,17 +152,15 @@ public final class StubUpdatingIndexStorage extends TransientFileContentIndex<In
     }
     finally {
       try {
-        getStubIndex().dispose();
+        IOUtil.closeAllSafely(
+          () -> getStubIndex().dispose(),
+          mySerializationManager::performShutdown,
+          myCompositeBinaryBuilderMap,
+          (StubTreeLoaderImpl)ApplicationManager.getApplication().getServiceIfCreated(StubTreeLoader.class)
+        );
       }
-      finally {
-        mySerializationManager.performShutdown();
-
-        try {
-          myCompositeBinaryBuilderMap.close();
-        }
-        catch (IOException e) {
-          throw new StorageException(e);
-        }
+      catch (IOException e) {
+        throw new StorageException(e);
       }
     }
   }

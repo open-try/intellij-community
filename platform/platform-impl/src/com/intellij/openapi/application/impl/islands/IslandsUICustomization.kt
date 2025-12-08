@@ -16,11 +16,13 @@ import com.intellij.openapi.application.impl.BorderPainterHolder
 import com.intellij.openapi.application.impl.InternalUICustomization
 import com.intellij.openapi.application.impl.ToolWindowUIDecorator
 import com.intellij.openapi.editor.colors.EditorColorsManager
+import com.intellij.openapi.editor.ex.EditorSettingsExternalizable
 import com.intellij.openapi.editor.impl.EditorHeaderComponent
 import com.intellij.openapi.editor.impl.SearchReplaceFacade
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.fileEditor.impl.EditorEmptyTextPainter
 import com.intellij.openapi.fileEditor.impl.EditorsSplitters
+import com.intellij.openapi.fileEditor.impl.createTopBottomSideBorder
 import com.intellij.openapi.options.advanced.AdvancedSettings
 import com.intellij.openapi.options.advanced.AdvancedSettingsChangeListener
 import com.intellij.openapi.ui.*
@@ -62,6 +64,7 @@ import java.awt.geom.RoundRectangle2D
 import java.util.function.Predicate
 import java.util.function.Supplier
 import javax.swing.*
+import javax.swing.border.AbstractBorder
 import javax.swing.border.Border
 
 private data class WindowBackgroundComponentData(val origOpaque: Boolean, val origBackground: Color?)
@@ -92,6 +95,15 @@ internal class IslandsUICustomization : InternalUICustomization() {
       }
       return value
     }
+
+  private val isBreadcrumbsAbove: Boolean
+    get() {
+      val settings = EditorSettingsExternalizable.getInstance()
+      return settings.isBreadcrumbsShown && settings.isBreadcrumbsAbove
+    }
+
+  private val searchReplaceEmptyTopSpace: Int
+    get() = if (UISettings.getInstance().editorTabPlacement == SwingConstants.TOP && !isBreadcrumbsAbove) 0 else 6
 
   private fun isDefaultTheme(): Boolean {
     val id = LafManager.getInstance().currentUIThemeLookAndFeel?.id ?: return false
@@ -138,7 +150,12 @@ internal class IslandsUICustomization : InternalUICustomization() {
     get() = !isManyIslandEnabled
 
   override val toolWindowUIDecorator: ToolWindowUIDecorator = object : ToolWindowUIDecorator() {
-    override fun decorateAndReturnHolder(divider: JComponent, child: JComponent, toolWindow: ToolWindow, originalBorderBuilder: () -> Border): JComponent {
+    override fun decorateAndReturnHolder(
+      divider: JComponent,
+      child: JComponent,
+      toolWindow: ToolWindow,
+      originalBorderBuilder: () -> Border,
+    ): JComponent {
       return XNextIslandHolder().apply {
         layout = BorderLayout()
         add(divider, BorderLayout.NORTH)
@@ -310,6 +327,9 @@ internal class IslandsUICustomization : InternalUICustomization() {
           is SearchReplaceFacade -> {
             configureSearchReplaceComponent(it as EditorHeaderComponent, true)
           }
+          is EditorNotificationPanelWrapper -> {
+            it.configure(true)
+          }
         }
       }
 
@@ -361,6 +381,9 @@ internal class IslandsUICustomization : InternalUICustomization() {
           }
           is SearchReplaceFacade -> {
             configureSearchReplaceComponent(it as EditorHeaderComponent, false)
+          }
+          is EditorNotificationPanelWrapper -> {
+            it.configure(false)
           }
         }
       }
@@ -616,10 +639,8 @@ internal class IslandsUICustomization : InternalUICustomization() {
       super.paintComponent(g)
 
       if (isManyIslandEnabled) {
-        val isTop = UISettings.getInstance().editorTabPlacement == SwingConstants.TOP
-
         val rect = Rectangle(size)
-        JBInsets.removeFrom(rect, if (isTop) JBInsets.create(0, 7) else JBInsets(6, 7, 2, 7))
+        JBInsets.removeFrom(rect, JBInsets(searchReplaceEmptyTopSpace, 7, 0, 7))
 
         g as Graphics2D
 
@@ -653,15 +674,10 @@ internal class IslandsUICustomization : InternalUICustomization() {
 
       @Suppress("UseDPIAwareInsets")
       val supplier = Supplier {
-        if (UISettings.getInstance().editorTabPlacement == SwingConstants.TOP) {
-          Insets(2, 10, 2, 10)
-        }
-        else {
-          Insets(8, 10, 4, 10)
-        }
+        Insets(5 + searchReplaceEmptyTopSpace, 10, 5, 10)
       }
       @Suppress("UNCHECKED_CAST")
-      parent.border = JBUI.Borders.empty(JBInsets.create(supplier as Supplier<Insets?>, supplier.get()))
+      parent.border = JBUI.Borders.empty(JBInsets.create(supplier, supplier.get()))
     }
     else {
       component.border = originalBorder
@@ -671,8 +687,79 @@ internal class IslandsUICustomization : InternalUICustomization() {
     (component as SearchReplaceFacade).configureUI(enabled)
   }
 
+  override fun configureEditorTopComponent(component: JComponent, top: Boolean): JComponent? {
+    if (component is EditorNotificationPanel && component.getClientProperty(FileEditorManager.SEPARATOR_DISABLED) != true) {
+      val wrapper = EditorNotificationPanelWrapper(component, top)
+      wrapper.configure(isManyIslandEnabled)
+      return wrapper
+    }
+    return null
+  }
+
+  @Suppress("UseDPIAwareInsets")
+  private inner class EditorNotificationPanelWrapper(private val component: JComponent, private val top: Boolean) : Wrapper(component) {
+    var borderColor: Color? = null
+
+    fun configure(enabled: Boolean) {
+      component.putClientProperty(FileEditorManager.SEPARATOR_DISABLED, true)
+
+      val border = ClientProperty.get(component, FileEditorManager.SEPARATOR_BORDER)
+      val borderColor = ClientProperty.get(component, FileEditorManager.SEPARATOR_COLOR)
+
+      if (enabled) {
+        if (border is SideBorder) {
+          this.borderColor = border.lineColor
+        }
+        else {
+          this.borderColor = borderColor
+        }
+
+        this.border = object : AbstractBorder() {
+          override fun getBorderInsets(c: Component): Insets {
+            val parent = c.parent
+            if (parent != null) {
+              val index = parent.components.indexOf(c)
+              val top = if (index == 0) 7 else 4
+              val bottom = if (index == parent.componentCount - 1) 7 else 4
+              return JBInsets(top, 10, bottom, 10)
+            }
+            return super.getBorderInsets(c)
+          }
+        }
+      }
+      else {
+        this.border = border ?: createTopBottomSideBorder(top, borderColor)
+      }
+    }
+
+    override fun paintComponent(g: Graphics?) {
+      super.paintComponent(g)
+
+      if (isManyIslandEnabled) {
+        val rect = Rectangle(size)
+        val w = JBUI.scale(6)
+        val h = JBUI.scale(1)
+        JBInsets.removeFrom(rect, Insets(insets.top - h, w, insets.bottom - h, w))
+
+        g as Graphics2D
+
+        g.color = component.background
+
+        val arc = JBUI.getInt("Banner.underlineArc", 12).toDouble()
+
+        RectanglePainter2D.FILL.paint(g, rect.x.toDouble(), rect.y.toDouble(), rect.width.toDouble(), rect.height.toDouble(),
+                                      arc, LinePainter2D.StrokeType.CENTERED, 1.0, RenderingHints.VALUE_ANTIALIAS_ON)
+
+        g.color = borderColor
+
+        RectanglePainter2D.DRAW.paint(g, rect.x.toDouble(), rect.y.toDouble(), rect.width.toDouble(), rect.height.toDouble(),
+                                      arc, LinePainter2D.StrokeType.CENTERED, 1.0, RenderingHints.VALUE_ANTIALIAS_ON)
+      }
+    }
+  }
+
   override fun shouldPaintEditorTabsBottomBorder(editorCompositePanel: JComponent): Boolean {
-    if (isManyIslandEnabled) {
+    if (isManyIslandEnabled && !isBreadcrumbsAbove) {
       return UIUtil.findComponentOfType(editorCompositePanel, SearchReplaceWrapper::class.java) == null
     }
     return true
@@ -754,7 +841,9 @@ internal class IslandsUICustomization : InternalUICustomization() {
       val borderWith = JBUI.scale(JBUI.getInt("Island.borderWidth", 4))
       val offset = borderWith / 2f
       val offsetWidth = borderWith + 0.5f
-      val border = Area(RoundRectangle2D.Float(offset, offset, width.toFloat() - offsetWidth, height.toFloat() - offsetWidth, cornerRadius, cornerRadius))
+      val border = Area(RoundRectangle2D.Float(offset, offset,
+                                               width.toFloat() - offsetWidth, height.toFloat() - offsetWidth,
+                                               cornerRadius, cornerRadius))
 
       shape.subtract(border)
 
@@ -793,7 +882,15 @@ internal class IslandsUICustomization : InternalUICustomization() {
   override val toolWindowTabPainter: IslandsTabPainter = object : IslandsTabPainter(false, false) {
     private val defaultPainter = JBTabPainter.TOOL_WINDOW
 
-    override fun paintTab(position: JBTabsPosition, g: Graphics2D, rect: Rectangle, borderThickness: Int, tabColor: Color?, active: Boolean, hovered: Boolean) {
+    override fun paintTab(
+      position: JBTabsPosition,
+      g: Graphics2D,
+      rect: Rectangle,
+      borderThickness: Int,
+      tabColor: Color?,
+      active: Boolean,
+      hovered: Boolean,
+    ) {
       if (isManyIslandEnabled) {
         super.paintTab(position, g, rect, borderThickness, tabColor, active, hovered)
       }
@@ -802,7 +899,15 @@ internal class IslandsUICustomization : InternalUICustomization() {
       }
     }
 
-    override fun paintSelectedTab(position: JBTabsPosition, g: Graphics2D, rect: Rectangle, borderThickness: Int, tabColor: Color?, active: Boolean, hovered: Boolean) {
+    override fun paintSelectedTab(
+      position: JBTabsPosition,
+      g: Graphics2D,
+      rect: Rectangle,
+      borderThickness: Int,
+      tabColor: Color?,
+      active: Boolean,
+      hovered: Boolean,
+    ) {
       if (isManyIslandEnabled) {
         super.paintSelectedTab(position, g, rect, borderThickness, tabColor, active, hovered)
       }
@@ -811,7 +916,15 @@ internal class IslandsUICustomization : InternalUICustomization() {
       }
     }
 
-    override fun paintTab(g: Graphics2D, position: JBTabsPosition, rect: Rectangle, tabColor: Color?, active: Boolean, hovered: Boolean, selected: Boolean) {
+    override fun paintTab(
+      g: Graphics2D,
+      position: JBTabsPosition,
+      rect: Rectangle,
+      tabColor: Color?,
+      active: Boolean,
+      hovered: Boolean,
+      selected: Boolean,
+    ) {
       g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
       super.paintTab(g, position, rect, tabColor, active, hovered, selected)
     }
@@ -924,8 +1037,10 @@ internal class IslandsUICustomization : InternalUICustomization() {
     return null
   }
 
-  private val PROJECT_TAB_SELECTED_BACKGROUND = JBColor.namedColor("MainWindow.Tab.selectedBackground", JBUI.CurrentTheme.ToolWindow.background())
-  private val PROJECT_TAB_HOVER_BACKGROUND = JBColor.namedColor("MainWindow.Tab.hoverBackground", JBColor.namedColor("MainToolbar.Dropdown.transparentHoverBackground"))
+  private val PROJECT_TAB_SELECTED_BACKGROUND =
+    JBColor.namedColor("MainWindow.Tab.selectedBackground", JBUI.CurrentTheme.ToolWindow.background())
+  private val PROJECT_TAB_HOVER_BACKGROUND =
+    JBColor.namedColor("MainWindow.Tab.hoverBackground", JBColor.namedColor("MainToolbar.Dropdown.transparentHoverBackground"))
   private val PROJECT_TAB_SEPARATOR_COLOR = JBColor.namedColor("MainWindow.Tab.separatorColor", 0xD3D5DB, 0x43454A)
 
   private fun isColorfulToolbar(frame: JFrame): Boolean {
@@ -947,7 +1062,15 @@ internal class IslandsUICustomization : InternalUICustomization() {
     }
   }
 
-  override fun paintProjectTab(frame: JFrame, label: TabLabel, g: Graphics, tabs: JBTabsImpl, selected: Boolean, index: Int, lastIndex: Int): Boolean {
+  override fun paintProjectTab(
+    frame: JFrame,
+    label: TabLabel,
+    g: Graphics,
+    tabs: JBTabsImpl,
+    selected: Boolean,
+    index: Int,
+    lastIndex: Int,
+  ): Boolean {
     if (!isManyIslandEnabled) {
       return false
     }

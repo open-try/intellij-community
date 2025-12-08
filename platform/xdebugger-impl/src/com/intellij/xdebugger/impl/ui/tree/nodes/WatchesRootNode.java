@@ -3,6 +3,8 @@ package com.intellij.xdebugger.impl.ui.tree.nodes;
 
 import com.intellij.icons.AllIcons;
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.platform.debugger.impl.shared.proxy.XDebugManagerProxy;
+import com.intellij.platform.debugger.impl.shared.proxy.XDebugSessionProxy;
 import com.intellij.ui.icons.CompositeIcon;
 import com.intellij.util.ArrayUtil;
 import com.intellij.util.ArrayUtilRt;
@@ -10,20 +12,15 @@ import com.intellij.util.IconUtil;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.ui.tree.TreeUtil;
 import com.intellij.xdebugger.XDebuggerBundle;
-import com.intellij.xdebugger.XDebuggerManager;
 import com.intellij.xdebugger.XExpression;
 import com.intellij.xdebugger.frame.*;
 import com.intellij.xdebugger.frame.presentation.XValuePresentation;
 import com.intellij.xdebugger.impl.XAlwaysEvaluatedWatch;
-import com.intellij.xdebugger.impl.XDebuggerManagerImpl;
 import com.intellij.xdebugger.impl.XWatch;
 import com.intellij.xdebugger.impl.XWatchImpl;
 import com.intellij.xdebugger.impl.breakpoints.XExpressionImpl;
 import com.intellij.xdebugger.impl.evaluate.XEvaluationOrigin;
-import com.intellij.xdebugger.impl.frame.WatchInplaceEditor;
-import com.intellij.xdebugger.impl.frame.XDebugSessionProxy;
-import com.intellij.xdebugger.impl.frame.XDebugView;
-import com.intellij.xdebugger.impl.frame.XWatchesView;
+import com.intellij.xdebugger.impl.frame.*;
 import com.intellij.xdebugger.impl.pinned.items.PinToTopParentValue;
 import com.intellij.xdebugger.impl.ui.tree.XDebuggerTree;
 import com.intellij.xdebugger.impl.ui.tree.XDebuggerTreeState;
@@ -104,7 +101,7 @@ public class WatchesRootNode extends XValueContainerNode.Root<XValueContainer> {
                          boolean watchesInVariables,
                          XDebuggerTreeState stateToRecover) {
     this(tree, watchesView,
-         ((XDebuggerManagerImpl)XDebuggerManager.getInstance(tree.getProject())).getWatchesManager().getWatchEntries(configurationName),
+         XDebugManagerProxy.getInstance().getWatchesManager(tree.getProject()).getWatchEntries(configurationName),
          stackFrame, watchesInVariables, stateToRecover, false);
   }
 

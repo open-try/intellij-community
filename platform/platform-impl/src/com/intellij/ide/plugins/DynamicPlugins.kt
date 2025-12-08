@@ -437,6 +437,15 @@ object DynamicPlugins {
         return dependency.pluginId
       }
     }
+    for (dependencyId in descriptor.moduleDependencies.plugins) {
+      if (!pluginSet.isPluginEnabled(dependencyId) &&
+          context.none {
+            it.pluginId == dependencyId || dependencyId in it.pluginAliases || dependencyId in it.contentModules.flatMap { it.pluginAliases }
+          }) {
+        return dependencyId
+      }
+    }
+    // TODO check modules
     return null
   }
 
@@ -1369,11 +1378,8 @@ private fun processPluginDependenciesOnPlugin(
   for (dependency in mainDescriptor.dependencies) {
     if (dependency.isOptional) {
       val subDescriptor = dependency.subDescriptor ?: continue
-      if (loadStateFilter != LoadStateFilter.ANY) {
-        val isModuleLoaded = subDescriptor.pluginClassLoader != null
-        if (isModuleLoaded != (loadStateFilter == LoadStateFilter.LOADED)) {
-          continue
-        }
+      if (loadStateFilter != LoadStateFilter.ANY && subDescriptor.isLoaded != (loadStateFilter == LoadStateFilter.LOADED)) {
+        continue
       }
       if (dependency.pluginId == dependencyTargetId && !processor(mainDescriptor, subDescriptor)) {
         return false
