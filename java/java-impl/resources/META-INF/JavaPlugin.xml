@@ -12,21 +12,13 @@
   <xi:include href="/META-INF/JavaCodeServerCore.xml"/>
   <xi:include href="/META-INF/JavaCodeServerHighlighting.xml"/>
   <xi:include href="/META-INF/JavaAnalysisPlugin.xml"/>
-  <xi:include href="/META-INF/IntentionPowerPack.xml">
-    <xi:fallback/>
-  </xi:include>
+  <xi:include href="/META-INF/IntentionPowerPack.xml"/>
   <xi:include href="/META-INF/Intentions.xml"/>
   <xi:include href="/META-INF/InspectionGadgets.xml"/>
   <xi:include href="/META-INF/Inspections.xml"/>
-  <xi:include href="/META-INF/ManifestSupport.xml">
-    <xi:fallback/>
-  </xi:include>
-  <xi:include href="/META-INF/TypeMigration.xml">
-    <xi:fallback/>
-  </xi:include>
-  <xi:include href="/META-INF/UsageData.xml">
-    <xi:fallback/>
-  </xi:include>
+  <xi:include href="/META-INF/ManifestSupport.xml"/>
+  <xi:include href="/META-INF/TypeMigration.xml"/>
+  <xi:include href="/META-INF/UsageData.xml"/>
   <xi:include href="/META-INF/java-debugger.xml"/>
 
   <projectListeners>
@@ -114,6 +106,8 @@
     </extensionPoint>
     <extensionPoint qualifiedName="com.intellij.hierarchy.referenceProcessor"
                     interface="com.intellij.ide.hierarchy.call.CallReferenceProcessor" dynamic="true"/>
+    <extensionPoint qualifiedName="com.intellij.hierarchy.elementProvider"
+                    interface="com.intellij.ide.hierarchy.call.CallHierarchyElementProvider" dynamic="true"/>
     <extensionPoint qualifiedName="com.intellij.refactoring.pullUpHelperFactory" beanClass="com.intellij.lang.LanguageExtensionPoint"
                     dynamic="true">
       <with attribute="implementationClass" implements="com.intellij.refactoring.memberPullUp.PullUpHelperFactory"/>
@@ -219,6 +213,8 @@
                     interface="com.intellij.compiler.progress.BuildIssueContributor"/>
 
     <extensionPoint qualifiedName="com.intellij.attachSourcesProvider" interface="com.intellij.codeInsight.AttachSourcesProvider"
+                    dynamic="true"/>
+    <extensionPoint qualifiedName="com.intellij.attachSourcesProviderFilter" interface="com.intellij.codeInsight.AttachSourcesProviderFilter"
                     dynamic="true"/>
 
     <extensionPoint qualifiedName="com.intellij.java.compiler" area="IDEA_PROJECT"
@@ -1198,11 +1194,13 @@
 
     <extendWordSelectionHandler implementation="com.intellij.codeInsight.editorActions.wordSelection.VarargsSelectioner"/>
 
-    <modcompletion.completionItemProvider language="JAVA" implementationClass="com.intellij.codeInsight.completion.modcompletion.KeywordCompletionItemProvider"/>
-    <modcompletion.completionItemProvider language="JAVA" implementationClass="com.intellij.codeInsight.completion.modcompletion.InstanceOfClassItemProvider"/>
-    <modcompletion.completionItemProvider language="JAVA" implementationClass="com.intellij.codeInsight.completion.modcompletion.LabelReferenceItemProvider"/>
-    <modcompletion.completionItemProvider language="JAVA" implementationClass="com.intellij.codeInsight.completion.modcompletion.AnnotationAttributeItemProvider"/>
-    <modcompletion.completionItemProvider language="JAVA" implementationClass="com.intellij.codeInsight.completion.modcompletion.GenerateMemberItemProvider"/>
+    <modcompletion.completionItemProvider language="JAVA" implementationClass="com.intellij.java.completion.modcommand.KeywordCompletionItemProvider"/>
+    <modcompletion.completionItemProvider language="JAVA" implementationClass="com.intellij.java.completion.modcommand.InstanceOfClassItemProvider"/>
+    <modcompletion.completionItemProvider language="JAVA" implementationClass="com.intellij.java.completion.modcommand.LabelReferenceItemProvider"/>
+    <modcompletion.completionItemProvider language="JAVA" implementationClass="com.intellij.java.completion.modcommand.AnnotationAttributeItemProvider"/>
+    <modcompletion.completionItemProvider language="JAVA" implementationClass="com.intellij.java.completion.modcommand.GenerateMemberItemProvider"/>
+    <modcompletion.completionItemProvider language="JAVA" implementationClass="com.intellij.java.completion.modcommand.ReferenceItemProvider"/>
+    <modcompletion.completionItemProvider language="JAVA" implementationClass="com.intellij.java.completion.modcommand.InnerScopeVariableItemProvider"/>
     
     <completion.skip implementation="com.intellij.codeInsight.completion.AbstractExpectedTypeSkipper" id="skipAbstract"/>
     <completion.skip implementation="com.intellij.codeInsight.completion.DeprecatedSkipper" id="skipDeprecated"/>
@@ -1291,7 +1289,8 @@
                                           group="ANNOTATIONS_GROUP"
                                           providerId="java.annotation.hints"
                                           bundle="messages.JavaBundle"
-                                          nameKey="settings.inlay.java.annotations">
+                                          nameKey="settings.inlay.java.annotations"
+                                          descriptionKey="settings.inlay.java.annotations.description">
       <option bundle="messages.JavaBundle"
               optionId="showInferred"
               enabledByDefault="false"
@@ -1302,8 +1301,10 @@
               enabledByDefault="true"
               nameKey="settings.inlay.java.external.annotations"
               descriptionKey="inlay.annotation.hints.external.annotations" />
-
     </codeInsight.declarativeInlayProvider>
+    <codeInsight.declarativeInlayProviderCustomSettingsProvider 
+      language="JAVA" providerId="java.annotation.hints" 
+      implementationClass="com.intellij.codeInsight.hints.AnnotationInlaySettingsProvider"/>
 
     <codeInsight.declarativeInlayProvider language="JAVA"
                                           implementationClass="com.intellij.codeInsight.hints.JavaImplicitTypeDeclarativeInlayHintsProvider"
@@ -1496,7 +1497,7 @@
     <codeFoldingOptionsProvider instance="com.intellij.application.options.editor.JavaCodeFoldingOptionsProvider"/>
     <consoleOptionsProvider instance="com.intellij.execution.filters.StackTraceFoldingConfigurable"/>
     <autoImportOptionsProvider instance="com.intellij.application.options.editor.JavaAutoImportOptions"/>
-    <errorOptionsProvider instance="com.intellij.profile.codeInspection.ui.JavaErrorOptionsProvider"/>
+    <errorOptionsProvider instance="com.intellij.java.codeInspection.ui.JavaErrorOptionsProvider"/>
     <overrideImplementsAnnotationsHandler implementation="com.intellij.codeInsight.generation.OverrideImplementsAnnotationsHandlerImpl"/>
     <codeInsight.changeVariableTypeQuickFixProvider
       implementation="com.intellij.codeInsight.daemon.impl.quickfix.VariableTypeQuickFixProvider"/>

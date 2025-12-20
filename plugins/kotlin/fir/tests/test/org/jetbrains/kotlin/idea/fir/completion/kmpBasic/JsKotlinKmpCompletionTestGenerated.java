@@ -3456,6 +3456,11 @@ public abstract class JsKotlinKmpCompletionTestGenerated extends AbstractKotlinK
             runTest("../../completion/testData/basic/common/CallLocalLambda.kt");
         }
 
+        @TestMetadata("chainCompletionDontDuplicate.kt")
+        public void testChainCompletionDontDuplicate() throws Exception {
+            runTest("../../completion/testData/basic/common/chainCompletionDontDuplicate.kt");
+        }
+
         @TestMetadata("classObjectElementsInClass.kt")
         public void testClassObjectElementsInClass() throws Exception {
             runTest("../../completion/testData/basic/common/classObjectElementsInClass.kt");
@@ -3504,6 +3509,16 @@ public abstract class JsKotlinKmpCompletionTestGenerated extends AbstractKotlinK
         @TestMetadata("DataClassMembers2.kt")
         public void testDataClassMembers2() throws Exception {
             runTest("../../completion/testData/basic/common/DataClassMembers2.kt");
+        }
+
+        @TestMetadata("DebounceDurationPreferringCompletion.kt")
+        public void testDebounceDurationPreferringCompletion() throws Exception {
+            runTest("../../completion/testData/basic/common/DebounceDurationPreferringCompletion.kt");
+        }
+
+        @TestMetadata("DelayDurationPreferringCompletion.kt")
+        public void testDelayDurationPreferringCompletion() throws Exception {
+            runTest("../../completion/testData/basic/common/DelayDurationPreferringCompletion.kt");
         }
 
         @TestMetadata("DoWhile.kt")

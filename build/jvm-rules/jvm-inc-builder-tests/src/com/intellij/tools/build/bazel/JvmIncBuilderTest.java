@@ -2,7 +2,6 @@ package com.intellij.tools.build.bazel;
 
 import com.intellij.tools.build.bazel.impl.BazelIncBuildTest;
 import com.intellij.tools.build.bazel.impl.BazelTestProgressExtension;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
@@ -14,9 +13,18 @@ public class JvmIncBuilderTest extends BazelIncBuildTest {
     performTest("kotlin/convertJavaToKotlinGetterUsages").assertFailure();
   }
 
-  @Disabled("Until kotlinc 2.3 is used for compilation")
+  @Test
+  void testInlineFunctionImplementationChanged() throws Exception {
+    performTest("kotlin/inlineFunctionImplementationChanged").assertSuccessful();
+  }
+
   @Test
   void testAssignJavaFieldFromKotlinSubclass() throws Exception {
     performTest("kotlin/assignJavaFieldFromKotlinSubclass").assertFailure();
+  }
+
+  @Test
+  void testAssignFieldFromSubclassAcrossTargets() throws Exception {
+    performTest("java/assignFieldFromSubclassAcrossTargets").assertFailure();
   }
 }

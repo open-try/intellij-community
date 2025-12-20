@@ -234,7 +234,7 @@ fleet/codecache
 fleet/codecache/test
 fleet/compiler-plugins
 fleet/fastutil
-fleet/junit4
+fleet/junit
 fleet/kernel
 fleet/ktor/client/cio
 fleet/ktor/client/core
@@ -265,6 +265,7 @@ grid/core-impl
 grid/csv
 grid/images
 grid/impl
+grid/impl-ide
 grid/json
 grid/types
 idea/customization/backend
@@ -453,13 +454,19 @@ libraries/ktor/utils
 libraries/lucene.common
 libraries/lz4
 libraries/markdown
+libraries/maven-resolver-provider
 libraries/microba
 libraries/miglayout-swing
 libraries/mockito
 libraries/mvstore
+libraries/netty/buffer
+libraries/netty/codec-compression
+libraries/netty/codec-http
+libraries/netty/handler-proxy
 libraries/opencsv
 libraries/oro-matcher
 libraries/plexus-utils
+libraries/protobuf
 libraries/proxy-vole
 libraries/pty4j
 libraries/rd/core
@@ -976,6 +983,7 @@ plugins/grazie/markdown
 plugins/grazie/properties
 plugins/grazie/src
 plugins/grazie/src/test
+plugins/grazie/src/tests.pro
 plugins/grazie/xml
 plugins/grazie/yaml
 plugins/groovy
@@ -1350,6 +1358,8 @@ plugins/maven/src/test
 plugins/maven/testFramework
 plugins/mcp-server
 plugins/mcp-server/mcpserver.stdio
+plugins/mcp-server/tests
+plugins/mcp-server/tests/plugin
 plugins/ml-local-models
 plugins/ml-local-models/java
 plugins/performanceTesting/commands-model
@@ -1537,6 +1547,8 @@ wintools
 xml/dom-impl
 xml/dom-openapi
 xml/dom-tests
+xml/emmet
+xml/emmet/backend
 xml/impl
 xml/langInjection
 xml/langInjection/xpath

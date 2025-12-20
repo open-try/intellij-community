@@ -4,14 +4,16 @@ package com.intellij.openapi.command.impl;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.command.CommandEvent;
 import com.intellij.openapi.command.CommandListener;
-import com.intellij.openapi.command.UndoConfirmationPolicy;
+import com.intellij.openapi.command.impl.cmd.CmdEvent;
+import com.intellij.openapi.command.impl.cmd.CmdEventTransform;
 import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import org.jetbrains.annotations.TestOnly;
 
 
 /**
- * Cs -- command started, Cf -- command finished, Ts -- transparent started, Tf -- transparent finished.
+ * CommandSeparator prevents overlapping of commands and transparent actions by the following rules:
  * <p>
  * [Cs, (Ts, Tf), Cf] -- Ts and Tf are ignored
  * <p>
@@ -21,10 +23,11 @@ import org.jetbrains.annotations.TestOnly;
  * <p>
  * [Cs, (Ts, Cf], Tf) -- Ts is ignored, Cf is pair Cf Ts
  * <p>
+ * where Cs -- command started, Cf -- command finished, Ts -- transparent started, Tf -- transparent finished
+ * <p>
  */
 @ApiStatus.Internal
 public final class CommandSeparator implements CommandListener {
-
   private final @NotNull SeparatedCommandListener publisher;
   private boolean commandStarted;
   private boolean transparentStarted;
@@ -97,34 +100,35 @@ public final class CommandSeparator implements CommandListener {
   }
 
   private void notifyCommandStarted(@NotNull CommandEvent event) {
-    notifyCommandStarted(createCmdEvent(event));
+    notifyCommand(event, true);
   }
 
   private void notifyCommandFinished(@NotNull CommandEvent event) {
-    notifyCommandFinished(createCmdEvent(event));
+    notifyCommand(event, false);
   }
 
   private void notifyTransparentStarted() {
-    notifyCommandStarted(createTransparentCmdEvent());
+    notifyCommand(null, true);
   }
 
   private void notifyTransparentFinished() {
-    notifyCommandFinished(createTransparentCmdEvent());
+    notifyCommand(null, false);
   }
 
-  private void notifyCommandStarted(@NotNull CmdEvent cmdEvent) {
-    publisher.onCommandStarted(cmdEvent);
-    UndoSpy undoSpy = UndoSpy.getInstance();
-    if (undoSpy != null) {
-      undoSpy.commandStarted(cmdEvent);
+  private void notifyCommand(@Nullable CommandEvent event, boolean isStart) {
+    CmdEvent cmdEvent = CmdEventTransform.getInstance().create(event, isStart);
+    if (isStart) {
+      publisher.onCommandStarted(cmdEvent);
+    } else {
+      publisher.onCommandFinished(cmdEvent);
     }
-  }
-
-  private void notifyCommandFinished(@NotNull CmdEvent cmdEvent) {
-    publisher.onCommandFinished(cmdEvent);
     UndoSpy undoSpy = UndoSpy.getInstance();
     if (undoSpy != null) {
-      undoSpy.commandFinished(cmdEvent);
+      if (isStart) {
+        undoSpy.commandStarted(cmdEvent);
+      } else {
+        undoSpy.commandFinished(cmdEvent);
+      }
     }
   }
 
@@ -150,30 +154,6 @@ public final class CommandSeparator implements CommandListener {
     if (transparentStarted) {
       throw new IllegalStateException("Transparent action already started");
     }
-  }
-
-  private static @NotNull CmdEvent createCmdEvent(@NotNull CommandEvent event) {
-    return CmdEvent.create(
-      CommandIdService.currCommandId(),
-      event.getProject(),
-      event.getCommandName(),
-      event.getCommandGroupId(),
-      event.getUndoConfirmationPolicy(),
-      event.shouldRecordActionForOriginalDocument(),
-      false
-    );
-  }
-
-  private static @NotNull CmdEvent createTransparentCmdEvent() {
-    return CmdEvent.create(
-      CommandIdService.currCommandId(),
-      null,
-      "",
-      null,
-      UndoConfirmationPolicy.DEFAULT,
-      false,
-      true
-    );
   }
 
   private static @NotNull SeparatedCommandListener getPublisher() {

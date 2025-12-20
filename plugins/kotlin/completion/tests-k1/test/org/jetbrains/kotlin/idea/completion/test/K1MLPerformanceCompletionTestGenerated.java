@@ -3262,6 +3262,11 @@ public abstract class K1MLPerformanceCompletionTestGenerated extends AbstractK1M
                 runTest("../testData/basic/common/CallLocalLambda.kt");
             }
 
+            @TestMetadata("chainCompletionDontDuplicate.kt")
+            public void testChainCompletionDontDuplicate() throws Exception {
+                runTest("../testData/basic/common/chainCompletionDontDuplicate.kt");
+            }
+
             @TestMetadata("classObjectElementsInClass.kt")
             public void testClassObjectElementsInClass() throws Exception {
                 runTest("../testData/basic/common/classObjectElementsInClass.kt");
@@ -3310,6 +3315,16 @@ public abstract class K1MLPerformanceCompletionTestGenerated extends AbstractK1M
             @TestMetadata("DataClassMembers2.kt")
             public void testDataClassMembers2() throws Exception {
                 runTest("../testData/basic/common/DataClassMembers2.kt");
+            }
+
+            @TestMetadata("DebounceDurationPreferringCompletion.kt")
+            public void testDebounceDurationPreferringCompletion() throws Exception {
+                runTest("../testData/basic/common/DebounceDurationPreferringCompletion.kt");
+            }
+
+            @TestMetadata("DelayDurationPreferringCompletion.kt")
+            public void testDelayDurationPreferringCompletion() throws Exception {
+                runTest("../testData/basic/common/DelayDurationPreferringCompletion.kt");
             }
 
             @TestMetadata("DoWhile.kt")

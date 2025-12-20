@@ -4,21 +4,25 @@ import com.intellij.ide.starter.config.ConfigurationStorage
 import com.intellij.ide.starter.config.splitMode
 import com.intellij.ide.starter.coroutine.perClassSupervisorScope
 import com.intellij.ide.starter.coroutine.testSuiteSupervisorScope
+import com.intellij.ide.starter.ide.isRemDevContext
 import com.intellij.ide.starter.junit5.cancelSupervisorScope
 import com.intellij.ide.starter.runner.IDERunContext
 import com.intellij.ide.starter.runner.Starter
+import com.intellij.ide.starter.runner.events.IdeLaunchEvent
 import com.intellij.ide.starter.utils.catchAll
 import com.intellij.lambda.testFramework.junit.IdeRunMode
-import com.intellij.lambda.testFramework.utils.IdeLambdaStarter.runIdeWithLambda
 import com.intellij.lambda.testFramework.utils.IdeWithLambda
-import com.intellij.tools.ide.util.common.starterLogger
+import com.intellij.lambda.testFramework.utils.runIdeWithLambda
+import com.intellij.openapi.diagnostic.logger
+import com.intellij.tools.ide.starter.bus.EventsBus
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withTimeout
-import kotlin.time.Duration.Companion.seconds
 
-private val LOG = starterLogger<IdeInstance>()
+data class RunContext(var frontendContext: IDERunContext, var backendContext: IDERunContext? = null)
 
 object IdeInstance {
+
+  private val LOG by lazy { logger<IdeInstance>() }
+
   private var _ide: IdeWithLambda? = null
   val ide: IdeWithLambda
     get() = _ide ?: throw IllegalStateException("IDE is not started yet")
@@ -27,7 +31,7 @@ object IdeInstance {
     private set
 
   private lateinit var currentIdeConfig: IdeStartConfig
-  lateinit var runContext: IDERunContext
+  lateinit var runContext: RunContext
     private set
 
   fun isStarted(): Boolean = _ide != null
@@ -47,11 +51,37 @@ object IdeInstance {
       currentIdeConfig = IdeStartConfig.current
       ConfigurationStorage.splitMode(currentIdeMode == IdeRunMode.SPLIT)
 
+      EventsBus.subscribe(IdeInstance) { event: IdeLaunchEvent ->
+        if (event.runContext.testContext.isRemDevContext()) {
+          LOG.info("$runMode mode run context hash ${event.runContext.hashCode()} object ${event.runContext}")
+
+          if (this::runContext.isInitialized) {
+            runContext = runContext.copy(backendContext = event.runContext)
+          }
+          else {
+            runContext = RunContext(backendContext = event.runContext, frontendContext = event.runContext)
+          }
+        }
+        else {
+          val frontendName = if (runMode == IdeRunMode.SPLIT) "Frontend" else "Monolith"
+          LOG.info("$frontendName run context hash ${event.runContext.hashCode()} object ${event.runContext}")
+
+          if (this::runContext.isInitialized) {
+            runContext = runContext.copy(frontendContext = event.runContext)
+          }
+          else {
+            runContext = RunContext(frontendContext = event.runContext)
+          }
+        }
+      }
+
       val testContext = Starter.newContextWithLambda(runMode.name, IdeStartConfig.current)
       _ide = testContext.runIdeWithLambda(configure = {
         IdeStartConfig.current.configureRunContext(this)
-        runContext = this
+        // Artifacts will be published after each test by invoking IdeInstance.publishArtifacts
+        this.artifactsPublishingEnabled = false
       })
+
       return ide
     }
     catch (e: Throwable) {
@@ -74,19 +104,17 @@ object IdeInstance {
   }
 
   fun publishArtifacts(): Unit = synchronized(this) {
-    runContext.publishArtifacts()
+    runContext.frontendContext.publishArtifacts(publish = true)
+    runContext.backendContext?.publishArtifacts(publish = true)
   }
 
-  fun cleanup() = synchronized(this) {
-    if (!isStarted() || !runContext.calculateVmOptions().hasUnitTestMode()) return@synchronized
-
-    @Suppress("RAW_RUN_BLOCKING")
-    runBlocking(testSuiteSupervisorScope.coroutineContext) {
-      withTimeout(5.seconds) {
-        catchAll("IDE instance cleanup") {
-          ide.cleanUp()
-        }
+  internal fun cleanup(): Unit = synchronized(this) {
+    if (!isStarted()) return@synchronized
+    runCatching {
+      @Suppress("RAW_RUN_BLOCKING")
+      runBlocking(testSuiteSupervisorScope.coroutineContext) {
+        ide.cleanUp()
       }
-    }
+    }.onFailure { LOG.error("Problems when cleaning up IDE: ${it.message}", it) }
   }
 }

@@ -24,7 +24,6 @@ import com.intellij.grazie.spellcheck.ranker.DiacriticSuggestionRanker
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.readAction
-import com.intellij.openapi.components.service
 import com.intellij.openapi.components.serviceAsync
 import com.intellij.openapi.extensions.ExtensionNotApplicableException
 import com.intellij.openapi.extensions.ExtensionPointName
@@ -47,7 +46,7 @@ import kotlinx.coroutines.launch
 import org.jetbrains.annotations.ApiStatus
 import org.jetbrains.annotations.TestOnly
 
-private const val MAX_WORD_LENGTH = 32
+const val MAX_WORD_LENGTH: Int = 32
 internal val LIFECYCLE_EP_NAME: ExtensionPointName<SpellcheckerLifecycle> = ExtensionPointName("com.intellij.spellchecker.lifecycle")
 
 class GrazieSpellCheckerEngine(
@@ -57,7 +56,7 @@ class GrazieSpellCheckerEngine(
 
   companion object {
     @JvmStatic
-    fun getInstance(project: Project): GrazieSpellCheckerEngine = project.service<SpellCheckerEngine>() as GrazieSpellCheckerEngine
+    fun getInstance(project: Project): GrazieSpellCheckerEngine = SpellCheckerEngine.getInstance(project) as GrazieSpellCheckerEngine
 
     val enDictionary: HunspellDictionary by lazy {
       val dic = Resources.text("/dictionary/en.dic")
@@ -119,12 +118,12 @@ class GrazieSpellCheckerEngine(
     val wordList = ExtendedWordListWithFrequency(enDictionary.dict, adapter)
     return GrazieSpeller.UserConfig(model = LanguageModel(
       language = Language.ENGLISH,
-      words = ExtendedWordListWithFrequency(enDictionary.dict, adapter),
+      words = wordList,
       rules = RuleDictionary.Aggregated(this.replacingRules),
       ranker = DiacriticSuggestionRanker(LanguageModel.getRanker(Language.ENGLISH, wordList)),
       filter = RadiusSuggestionFilter(0.05),
       normalizer = StripAccentsNormalizer(),
-      isAlien = { !Alphabet.ENGLISH.matchAny(it) && adapter.isAlien(it) }
+      isAlien = { adapter.isAlien(it) }
     ))
   }
 
@@ -178,7 +177,7 @@ class GrazieSpellCheckerEngine(
     if (speller.isAlien(word)) {
       return true
     }
-    return !speller.isMisspelled(word = word, caseSensitive = false)
+    return !speller.isMisspelled(word, caseSensitive = false)
   }
 
   override fun getSuggestions(word: String, maxSuggestions: Int, maxMetrics: Int): List<String> {

@@ -10,6 +10,7 @@ import com.intellij.openapi.client.ClientKind;
 import com.intellij.openapi.client.ClientSession;
 import com.intellij.openapi.client.ClientSessionsManager;
 import com.intellij.openapi.command.CommandProcessor;
+import com.intellij.openapi.command.impl.cmd.CmdEvent;
 import com.intellij.openapi.command.undo.DocumentReference;
 import com.intellij.openapi.command.undo.DocumentReferenceManager;
 import com.intellij.openapi.command.undo.UndoManager;
@@ -274,6 +275,14 @@ public class UndoManagerImpl extends UndoManager {
   }
 
   @ApiStatus.Internal
+  public void resetOriginalDocument() {
+    UndoClientState state = getClientState();
+    if (state != null) {
+      state.resetOriginalDocument();
+    }
+  }
+
+  @ApiStatus.Internal
   protected void clearStacks(@Nullable FileEditor editor) {
     for (UndoClientState state : getAllClientStates()) {
       state.clearStacks(editor);
@@ -291,10 +300,6 @@ public class UndoManagerImpl extends UndoManager {
         state.undoOrRedo(editor, commandName, beforeUndoRedoStarted, isUndo);
       } finally {
         Disposer.dispose(disposable);
-      }
-      UndoSpy undoSpy = UndoSpy.getInstance();
-      if (undoSpy != null) {
-        undoSpy.undoRedoPerformed(myProject, editor, isUndo);
       }
     }
   }

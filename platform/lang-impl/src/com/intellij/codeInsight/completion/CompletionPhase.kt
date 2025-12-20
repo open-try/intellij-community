@@ -6,6 +6,7 @@ import com.intellij.codeInsight.completion.CompletionPhase.Companion.NoCompletio
 import com.intellij.codeInsight.completion.impl.CompletionServiceImpl
 import com.intellij.codeInsight.completion.impl.CompletionServiceImpl.Companion.assertPhase
 import com.intellij.codeWithMe.ClientId
+import com.intellij.codeWithMe.ClientId.Companion.withExplicitClientId
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.actionSystem.IdeActions
 import com.intellij.openapi.application.ApplicationListener
@@ -77,9 +78,8 @@ sealed class CompletionPhase @ApiStatus.Internal constructor(
     editor: Editor,
     private val event: TypedEvent?
   ) : CompletionPhase(indicator) {
-    @ApiStatus.Internal
     @JvmField
-    var replaced: Boolean = false
+    internal var replaced: Boolean = false
 
     private val myTracker: ActionTracker = ActionTracker(editor, this)
     private var myState: CommittingState = InProgress(1) // access available on EDT only
@@ -395,21 +395,23 @@ sealed class CompletionPhase @ApiStatus.Internal constructor(
     private fun restartOnWriteAction() {
       ApplicationManager.getApplication().addApplicationListener(object : ApplicationListener {
         override fun beforeWriteActionStart(action: Any) {
-          if (!indicator!!.lookup.isLookupDisposed && !indicator.isCanceled && ownerId == ClientId.current) {
-            indicator.cancel()
-            if (EDT.isCurrentThreadEdt()) {
-              indicator.scheduleRestart()
-            }
-            else {
-              // this branch is possible because completion can be canceled on background write action
-              ApplicationManager.getApplication().invokeLater(
-                /* runnable = */ { indicator.scheduleRestart() },
+          if (!indicator!!.lookup.isLookupDisposed && !indicator.isCanceled) {
+            withExplicitClientId(ownerId) {
+              indicator.cancel()
+              if (EDT.isCurrentThreadEdt()) {
+                indicator.scheduleRestart()
+              }
+              else {
+                // this branch is possible because completion can be canceled on background write action
+                ApplicationManager.getApplication().invokeLater(
+                  /* runnable = */ { indicator.scheduleRestart() },
 
-                // since we break the synchronous execution here, it is possible that some other EDT event finishes completion before us
-                // in this case, the current indicator becomes obsolete, and we don't need to reschedule the session anymore
+                  // since we break the synchronous execution here, it is possible that some other EDT event finishes completion before us
+                  // in this case, the current indicator becomes obsolete, and we don't need to reschedule the session anymore
 
-                /* expired = */ { CompletionServiceImpl.currentCompletionProgressIndicator != indicator }
-              )
+                  /* expired = */ { CompletionServiceImpl.currentCompletionProgressIndicator != indicator }
+                )
+              }
             }
           }
         }

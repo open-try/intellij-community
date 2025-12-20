@@ -48,7 +48,9 @@ import com.intellij.ui.ExperimentalUI.Companion.isNewUI
 import com.intellij.ui.awt.RelativePoint
 import com.intellij.ui.components.JBList
 import com.intellij.ui.components.JBScrollPane
+import com.intellij.ui.components.SearchFieldWithExtension
 import com.intellij.ui.components.fields.ExtendableTextComponent
+import com.intellij.ui.components.panels.Wrapper
 import com.intellij.ui.dsl.gridLayout.GridLayout
 import com.intellij.ui.dsl.gridLayout.HorizontalAlign
 import com.intellij.ui.dsl.gridLayout.VerticalAlign
@@ -172,7 +174,7 @@ class SePopupContentPane(
 
     RowsGridBuilder(this)
       .row().cell(headerPane, horizontalAlign = HorizontalAlign.FILL, resizableColumn = true)
-      .row().cell(textField, horizontalAlign = HorizontalAlign.FILL, resizableColumn = true)
+      .row().cell(wrapSearchField(), horizontalAlign = HorizontalAlign.FILL, resizableColumn = true) //
       .row(resizable = true).cell(splitter, horizontalAlign = HorizontalAlign.FILL, verticalAlign = VerticalAlign.FILL, resizableColumn = true)
       .row().cell(extendedInfoContainer, horizontalAlign = HorizontalAlign.FILL, resizableColumn = true)
 
@@ -192,6 +194,18 @@ class SePopupContentPane(
         connectTo(vm)
       }
     }
+  }
+
+  private fun wrapSearchField(): JComponent {
+    if (!Registry.`is`("search.everywhere.round.text.field", false)) {
+      return textField
+    }
+
+    val wrapper = Wrapper(SearchFieldWithExtension(textField, JBUI.CurrentTheme.Popup.BACKGROUND))
+    wrapper.isOpaque = true
+    wrapper.background = JBUI.CurrentTheme.Popup.BACKGROUND
+    wrapper.border = JBUI.Borders.empty(3, 5)
+    return wrapper
   }
 
   fun setVm(vm: SePopupVm) {
@@ -379,7 +393,7 @@ class SePopupContentPane(
             }
           }
           else if (semanticWarning) {
-            val noExactMatchesText = SearchEverywhereFrontendBundle.getMessage("search.everywhere.no.exact.matches")
+            val noExactMatchesText = SearchEverywhereFrontendBundle.bundle.getMessage("search.everywhere.no.exact.matches")
             hintHelper.setHint(noExactMatchesText)
           }
           else {
@@ -923,7 +937,8 @@ class SePopupContentPane(
 
   private fun calcPreferredSize(compact: Boolean, avoidWidthDecreasing: Boolean = false): Dimension {
     val preferredHeight = if (compact) {
-      headerPane.preferredSize.height + textField.preferredSize.height
+      val extraHeight = if (Registry.`is`("search.everywhere.round.text.field", false)) JBUI.scale(15) else 0
+      headerPane.preferredSize.height + textField.preferredSize.height + extraHeight
     }
     else {
       getPopupExtendedHeight()

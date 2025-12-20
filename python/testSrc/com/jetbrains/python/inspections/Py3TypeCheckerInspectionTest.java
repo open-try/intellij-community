@@ -1680,6 +1680,17 @@ public class Py3TypeCheckerInspectionTest extends PyInspectionTestCase {
                    subClass.foo(subClass.foo(<warning descr="Expected type 'SubClass' (matched generic type 'Self@MyClass'), got 'MyClass' instead">myClass</warning>))""");
   }
 
+  public void testSelfParameterType() {
+    doTestByText("""
+                   class MyClass[T]:
+                       def __init__(self: "MyClass[int]") -> None: ...
+                   
+                   MyClass()
+                   MyClass[int]()
+                   <warning descr="Expected type 'MyClass[int]', got 'MyClass[str]' instead">MyClass[str]</warning>()
+                   """);
+  }
+
   // PY-53104
   public void testProtocolSelfClass() {
     doTestByText("""
@@ -3368,6 +3379,35 @@ public class Py3TypeCheckerInspectionTest extends PyInspectionTestCase {
                    """);
   }
 
+  // PY-86249
+  public void testProtocolAndFrozenDataclassWithMethod() {
+    doTestByText("""
+                   import abc
+                   import dataclasses
+                   from typing import Protocol
+                   
+                   
+                   class Proto(Protocol):
+                       @abc.abstractmethod
+                       def to_kwargs(self) -> dict:
+                           pass
+                   
+                   
+                   @dataclasses.dataclass(frozen=True)
+                   class Impl:
+                       name: str
+                   
+                       def to_kwargs(self) -> dict:
+                           return {"name": self.name}
+                   
+                   
+                   def do(arg: Proto) -> None: ...
+                   
+                   
+                   do(Impl(name="vrf1"))
+                   """);
+  }
+
   // PY-85771
   public void testFlagName() {
     doTestByText("""
@@ -3581,6 +3621,21 @@ public class Py3TypeCheckerInspectionTest extends PyInspectionTestCase {
                    
                    if not typing.TYPE_CHECKING:
                        x = 1
+                   """);
+  }
+
+  // PY-85988
+  public void testClsCallResult() {
+    doTestByText("""
+                   from dataclasses import dataclass
+                   from typing import Self
+                   
+                   
+                   @dataclass
+                   class Foo:
+                       @classmethod
+                       def bar(cls) -> Self:
+                           return cls()
                    """);
   }
 }

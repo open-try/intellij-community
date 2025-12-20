@@ -1,6 +1,5 @@
 package com.intellij.lambda.testFramework.junit
 
-import com.intellij.ide.starter.junit5.RemoteDevRun
 import com.intellij.lambda.testFramework.starter.ConfigureCoroutineCancellationTimeout
 import com.intellij.lambda.testFramework.starter.IdeConfigReset
 import com.intellij.util.SystemProperties
@@ -16,6 +15,7 @@ import java.lang.annotation.Inherited
 @Retention(AnnotationRetention.RUNTIME)
 @Inherited
 @ExtendWith(
+  TestFactoryLoggerSetter::class,
   StartIdeBeforeEachCallback::class,
   IdeConfigReset::class,
   ConfigureCoroutineCancellationTimeout::class,
@@ -23,7 +23,6 @@ import java.lang.annotation.Inherited
   MonolithAndSplitModeInvocationInterceptor::class,
   BackgroundLambdaCleanupAfterEach::class,
   IdeWithLambdaParameterResolver::class,
-  RemoteDevRun::class
 )
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 annotation class RunInMonolithAndSplitMode(vararg val mode: IdeRunMode = [IdeRunMode.MONOLITH, IdeRunMode.SPLIT])

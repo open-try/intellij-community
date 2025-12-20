@@ -1,6 +1,4 @@
 // Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
-@file:Suppress("ReplaceGetOrSet", "OVERRIDE_DEPRECATION", "ReplacePutWithAssignment", "LeakingThis")
-
 package com.intellij.openapi.wm.impl.status
 
 import com.intellij.accessibility.AccessibilityUtils
@@ -22,7 +20,6 @@ import com.intellij.openapi.fileEditor.FileEditor
 import com.intellij.openapi.progress.ProgressIndicatorModel
 import com.intellij.openapi.progress.ProgressModel
 import com.intellij.openapi.progress.TaskInfo
-import com.intellij.openapi.progress.impl.BridgeTaskSupport
 import com.intellij.openapi.progress.impl.PerProjectTaskInfoEntityCollector
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.MessageType
@@ -69,7 +66,6 @@ import kotlinx.coroutines.flow.*
 import org.jetbrains.annotations.ApiStatus
 import org.jetbrains.annotations.ApiStatus.Internal
 import org.jetbrains.annotations.Nls
-import org.jetbrains.annotations.NonNls
 import java.awt.*
 import java.awt.event.MouseEvent
 import java.util.function.Supplier
@@ -84,6 +80,8 @@ import kotlin.math.max
 private const val UI_CLASS_ID = "IdeStatusBarUI"
 private val WIDGET_ID = Key.create<String>("STATUS_BAR_WIDGET_ID")
 
+private val LOG = logger<IdeStatusBarImpl>()
+
 private val minIconHeight: Int
   get() = JBUIScale.scale(18 + 1 + 1)
 
@@ -95,12 +93,15 @@ internal interface ChildStatusBarWidget {
   fun createForChild(childStatusBar: IdeStatusBarImpl): StatusBarWidget
 }
 
+@OptIn(ExperimentalCoroutinesApi::class)
 open class IdeStatusBarImpl @Internal constructor(
   parentCs: CoroutineScope,
   private val getProject: () -> Project?,
   addToolWindowWidget: Boolean,
-  internal val currentFileEditorFlow: StateFlow<FileEditor?>? = null,
+  currentFileEditorFlow: StateFlow<FileEditor?>? = null,
 ) : JComponent(), Accessible, StatusBarEx, UiDataProvider {
+  private val customCurrentFileEditorFlow: MutableStateFlow<StateFlow<FileEditor?>?> = MutableStateFlow(currentFileEditorFlow)
+
   internal val coroutineScope = parentCs.childScope("IdeStatusBarImpl", supervisor = false)
   private var infoAndProgressPanel: InfoAndProgressPanel? = null
 
@@ -132,8 +133,6 @@ open class IdeStatusBarImpl @Internal constructor(
     internal val HOVERED_WIDGET_ID: DataKey<String> = DataKey.create("HOVERED_WIDGET_ID")
 
     const val NAVBAR_WIDGET_KEY: String = "NavBar"
-
-    private val LOG = logger<IdeStatusBarImpl>()
   }
 
   override fun findChild(c: Component): StatusBar {
@@ -253,10 +252,12 @@ open class IdeStatusBarImpl @Internal constructor(
     childManager.setVisibilityForAll(aFlag)
   }
 
+  @Suppress("OVERRIDE_DEPRECATION")
   override fun addWidget(widget: StatusBarWidget) {
     addWidget(widget, Position.RIGHT, LoadingOrder.ANY)
   }
 
+  @Suppress("OVERRIDE_DEPRECATION")
   override fun addWidget(widget: StatusBarWidget, anchor: String) {
     val order = LoadingOrder.anchorToOrder(anchor)
     EdtInvocationManager.invokeLaterIfNeeded { addWidget(widget, Position.RIGHT, order) }
@@ -302,7 +303,7 @@ open class IdeStatusBarImpl @Internal constructor(
    * @param widget widget to add
    */
   internal suspend fun addWidgetToLeft(widget: StatusBarWidget) {
-    withContext(Dispatchers.UiWithModelAccess) {
+    withContext(Dispatchers.EDT) {
       addWidget(widget, Position.LEFT, LoadingOrder.ANY)
     }
   }
@@ -330,7 +331,7 @@ open class IdeStatusBarImpl @Internal constructor(
     // Create components in parallel (performance optimization)
     val beans: List<WidgetBean> = span("status bar widget creating") {
       widgets.map { (widget, anchor) ->
-        val component = span(widget.ID(), Dispatchers.UiWithModelAccess + anyModality) {
+        val component = span(widget.ID(), Dispatchers.EDT + anyModality) {
           val c = wrap(widget)
           if (c is StatusBarWidgetWrapper) {
             c.beforeUpdate()
@@ -341,7 +342,7 @@ open class IdeStatusBarImpl @Internal constructor(
       }
     }
 
-    withContext(Dispatchers.UiWithModelAccess + anyModality + CoroutineName("status bar widget adding")) {
+    withContext(Dispatchers.EDT + anyModality + CoroutineName("status bar widget adding")) {
       // Add all to self
       for (bean in beans) {
         addWidgetToSelf(bean, parentDisposable)
@@ -358,14 +359,14 @@ open class IdeStatusBarImpl @Internal constructor(
 
     // Fire events
     if (listeners.hasListeners()) {
-      withContext(Dispatchers.UiWithModelAccess + anyModality) {
+      withContext(Dispatchers.EDT + anyModality) {
         for (bean in beans) {
           fireWidgetAdded(bean.widget, bean.anchor)
         }
       }
     }
 
-    withContext(Dispatchers.UiWithModelAccess) {
+    withContext(Dispatchers.EDT) {
       PopupHandler.installPopupMenu(this@IdeStatusBarImpl, StatusBarWidgetsActionGroup.GROUP_ID, ActionPlaces.STATUS_BAR_PLACE)
     }
   }
@@ -476,7 +477,7 @@ open class IdeStatusBarImpl @Internal constructor(
   override fun addProgress(indicator: ProgressIndicatorEx, info: TaskInfo) {
     if (Registry.`is`("rhizome.progress")) {
       @Suppress("DEPRECATION")
-      BridgeTaskSupport.getInstance().withBridgeBackgroundProgress(project, indicator, info)
+      com.intellij.openapi.progress.impl.BridgeTaskSupport.getInstance().withBridgeBackgroundProgress(project, indicator, info)
     }
     else {
       addProgressImpl(ProgressIndicatorModel(indicator, info.title, info.isCancellable), info)
@@ -690,7 +691,7 @@ open class IdeStatusBarImpl @Internal constructor(
   override val allWidgets: Collection<StatusBarWidget>?
     get() = widgetRegistry.getAllWidgets()
 
-  override fun getWidgetAnchor(id: String): @NonNls String? = widgetRegistry.getAnchor(id)
+  override fun getWidgetAnchor(id: String): String? = widgetRegistry.getAnchor(id)
 
   //todo: make private after removing all external usages
   @Internal
@@ -699,13 +700,19 @@ open class IdeStatusBarImpl @Internal constructor(
   override val project: Project?
     get() = getProject()
 
-  @get:Internal
-  override val currentEditor: StateFlow<FileEditor?>
-    get() = currentFileEditorFlow ?: defaultEditorFlow
-
   private val defaultEditorFlow: StateFlow<FileEditor?> by lazy {
     val project = project ?: return@lazy MutableStateFlow(null)
     project.service<StatusBarWidgetsManager>().dataContext.currentFileEditor
+  }
+
+  @get:Internal
+  override val currentEditor: StateFlow<FileEditor?> = customCurrentFileEditorFlow
+    .flatMapLatest { it ?: defaultEditorFlow }
+    .stateIn(coroutineScope, SharingStarted.Eagerly, null)
+
+  @Internal
+  fun setCurrentFileEditorFlow(flow: StateFlow<FileEditor?>?) {
+    customCurrentFileEditorFlow.value = flow
   }
 
   override fun getAccessibleContext(): AccessibleContext {
@@ -720,15 +727,15 @@ open class IdeStatusBarImpl @Internal constructor(
     listeners.addListener(listener, parentDisposable)
   }
 
-  private fun fireWidgetAdded(widget: StatusBarWidget, anchor: @NonNls String?) {
+  private fun fireWidgetAdded(widget: StatusBarWidget, anchor: String?) {
     listeners.multicaster.widgetAdded(widget, anchor)
   }
 
-  private fun fireWidgetUpdated(id: @NonNls String) {
+  private fun fireWidgetUpdated(id: String) {
     listeners.multicaster.widgetUpdated(id)
   }
 
-  private fun fireWidgetRemoved(id: @NonNls String) {
+  private fun fireWidgetRemoved(id: String) {
     listeners.multicaster.widgetRemoved(id)
   }
 
@@ -923,7 +930,9 @@ private class StatusBarWidgetClickListener(private val clickConsumer: (MouseEven
   override fun onClick(e: MouseEvent, clickCount: Int): Boolean {
     if (!e.isPopupTrigger && MouseEvent.BUTTON1 == e.button) {
       StatusBarWidgetClicked.log(clickConsumer.javaClass)
-      clickConsumer(e)
+      WriteIntentReadAction.run {
+        clickConsumer(e)
+      }
     }
     return true
   }

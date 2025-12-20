@@ -7,6 +7,7 @@ import com.intellij.util.containers.FList;
 import com.intellij.util.text.CharArrayCharSequence;
 import com.intellij.util.text.CharArrayUtil;
 import com.intellij.util.text.NameUtilCore;
+import com.intellij.util.text.matching.MatchingMode;
 import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -25,7 +26,7 @@ final class MinusculeMatcherImpl extends MinusculeMatcher {
 
   private final char[] myPattern;
   private final String myHardSeparators;
-  private final NameUtil.MatchingCaseSensitivity myOptions;
+  private final MatchingMode myMatchingMode;
   private final boolean myHasHumps;
   private final boolean myHasSeparators;
   private final boolean myHasDots;
@@ -40,12 +41,12 @@ final class MinusculeMatcherImpl extends MinusculeMatcher {
   /**
    * Constructs a matcher by a given pattern.
    * @param pattern the pattern
-   * @param options case sensitivity settings
+   * @param matchingMode case sensitivity settings
    * @param hardSeparators A string of characters (empty by default). Lowercase humps don't work for parts separated by any of these characters.
    * Need either an explicit uppercase letter or the same separator character in prefix
    */
-  MinusculeMatcherImpl(@NotNull String pattern, @NotNull NameUtil.MatchingCaseSensitivity options, @NotNull String hardSeparators) {
-    myOptions = options;
+  MinusculeMatcherImpl(@NotNull String pattern, @NotNull MatchingMode matchingMode, @NotNull String hardSeparators) {
+    myMatchingMode = matchingMode;
     myPattern = Strings.trimEnd(pattern, "* ").toCharArray();
     myHardSeparators = hardSeparators;
     isLowerCase = new boolean[myPattern.length];
@@ -274,7 +275,7 @@ final class MinusculeMatcherImpl extends MinusculeMatcher {
 
     if (patternIndex == myPattern.length) {
       // the trailing space should match if the pattern ends with the last word part, or only its first hump character
-      if (isTrailingSpacePattern() && nameIndex != name.length() && (patternIndex < 2 || !isUpperCaseOrDigit(myPattern[patternIndex - 2]))) {
+      if (isTrailingSpacePattern() && nameIndex != name.length() && (patternIndex < 2 || !isUpperCaseOrDigit(patternIndex - 2))) {
         int spaceIndex = name.indexOf(' ', nameIndex);
         if (spaceIndex >= 0) {
           return FList.singleton(TextRange.from(spaceIndex, 1));
@@ -293,8 +294,8 @@ final class MinusculeMatcherImpl extends MinusculeMatcher {
     return isPatternChar(myPattern.length - 1, ' ');
   }
 
-  private static boolean isUpperCaseOrDigit(char p) {
-    return Character.isUpperCase(p) || Character.isDigit(p);
+  private boolean isUpperCaseOrDigit(int patternIndex) {
+    return isUpperCase[patternIndex] || Character.isDigit(myPattern[patternIndex]);
   }
 
   /**
@@ -356,7 +357,7 @@ final class MinusculeMatcherImpl extends MinusculeMatcher {
            Character.isUpperCase(name.charAt(nextOccurrence)) ||
            NameUtilCore.isWordStart(name, nextOccurrence) ||
            // accept uppercase matching lowercase if the whole prefix is uppercase and case sensitivity allows that
-           !myHasHumps && myOptions != NameUtil.MatchingCaseSensitivity.ALL;
+           !myHasHumps && myMatchingMode != MatchingMode.MATCH_CASE;
   }
 
   private boolean charEquals(char patternChar, int patternIndex, char c, boolean isIgnoreCase) {
@@ -377,7 +378,7 @@ final class MinusculeMatcherImpl extends MinusculeMatcher {
     }
 
     int i = 1;
-    boolean ignoreCase = myOptions != NameUtil.MatchingCaseSensitivity.ALL;
+    boolean ignoreCase = myMatchingMode != MatchingMode.MATCH_CASE;
     while (nameIndex + i < name.length() && patternIndex + i < myPattern.length) {
       char nameChar = name.charAt(nameIndex + i);
       if (!charEquals(myPattern[patternIndex + i], patternIndex + i, nameChar, ignoreCase)) {
@@ -484,21 +485,21 @@ final class MinusculeMatcherImpl extends MinusculeMatcher {
   private boolean isFirstCharMatching(@NotNull String name, int nameIndex, int patternIndex) {
     if (nameIndex >= name.length()) return false;
 
-    boolean ignoreCase = myOptions != NameUtil.MatchingCaseSensitivity.ALL;
+    boolean ignoreCase = myMatchingMode != MatchingMode.MATCH_CASE;
     char patternChar = myPattern[patternIndex];
     if (!charEquals(patternChar, patternIndex, name.charAt(nameIndex), ignoreCase)) return false;
 
-    if (myOptions == NameUtil.MatchingCaseSensitivity.FIRST_LETTER &&
+    if (myMatchingMode == MatchingMode.FIRST_LETTER &&
         (patternIndex == 0 || patternIndex == 1 && isWildcard(0)) &&
-        hasCase(patternChar) &&
-        Character.isUpperCase(patternChar) != Character.isUpperCase(name.charAt(0))) {
+        hasCase(patternIndex) &&
+        isUpperCase[patternIndex] != Character.isUpperCase(name.charAt(0))) {
       return false;
     }
     return true;
   }
 
-  private static boolean hasCase(char patternChar) {
-    return Character.isUpperCase(patternChar) || Character.isLowerCase(patternChar);
+  private boolean hasCase(int patternIndex) {
+    return isUpperCase[patternIndex]  || isLowerCase[patternIndex];
   }
 
   private boolean isWildcard(int patternIndex) {
@@ -548,7 +549,7 @@ final class MinusculeMatcherImpl extends MinusculeMatcher {
 
   @Override
   public @NonNls String toString() {
-    return "MinusculeMatcherImpl{myPattern=" + new String(myPattern) + ", myOptions=" + myOptions + '}';
+    return "MinusculeMatcherImpl{myPattern=" + new String(myPattern) + ", myOptions=" + myMatchingMode + '}';
   }
 
 }

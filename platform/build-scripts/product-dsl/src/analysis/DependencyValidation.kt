@@ -1,419 +1,575 @@
 // Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
+@file:Suppress("ReplaceGetOrSet", "ReplacePutWithAssignment")
+
 package org.jetbrains.intellij.build.productLayout.analysis
 
 import com.intellij.platform.plugins.parser.impl.elements.ModuleLoadingRuleValue
-import org.jetbrains.intellij.build.productLayout.AnsiColors
-import org.jetbrains.intellij.build.productLayout.ModuleDescriptorCache
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import org.jetbrains.intellij.build.productLayout.ModuleSet
 import org.jetbrains.intellij.build.productLayout.ProductModulesContentSpec
+import org.jetbrains.intellij.build.productLayout.dependency.ModuleDescriptorCache
+import org.jetbrains.intellij.build.productLayout.discovery.PluginContentInfo
 
-/**
- * Known missing dependencies that are temporarily allowed.
- * These are typically provided by plugin layouts rather than module sets.
- * TODO: Move these to proper module sets or fix product definitions
- */
-internal val KNOWN_MISSING_DEPENDENCIES = setOf(
-  "intellij.cidr.core",
-  "intellij.cidr.util.execution",
-  "intellij.cidr.debugger.core",
-  "intellij.cidr.debugger.backend",
-  "intellij.cidr.runner"
-)
+// region Validation Functions
 
 /**
  * Validates module sets marked with selfContained=true in isolation.
- * 
+ *
  * Self-contained module sets must be resolvable without other module sets.
  * This ensures they have all their dependencies available internally.
- * 
+ *
  * Example: core.platform is self-contained because CodeServer uses it alone
  * without other module sets, so it must contain everything needed.
- * 
- * Only validates self-contained sets to avoid false positives from composable
- * module sets like debugger(), vcs(), xml() that depend on modules from other sets.
- * 
- * **Key difference from normal validation**: For self-contained sets, ALL modules
- * in the entire hierarchy (including nested sets) can see ALL other modules.
- * This matches runtime behavior where order doesn't matter (topological sort).
+ *
+ * @return List of validation errors (empty if all self-contained sets are valid)
  */
-internal fun validateSelfContainedModuleSets(
+internal suspend fun validateSelfContainedModuleSets(
   allModuleSets: List<ModuleSet>,
-  descriptorCache: ModuleDescriptorCache
-) {
-  // Collect all self-contained module sets (recursively check nested sets too)
-  val selfContainedSets = mutableListOf<ModuleSet>()
-  fun collectSelfContained(moduleSet: ModuleSet) {
-    if (moduleSet.selfContained) {
-      selfContainedSets.add(moduleSet)
-    }
-    for (nestedSet in moduleSet.nestedSets) {
-      collectSelfContained(nestedSet)
-    }
-  }
-  for (moduleSet in allModuleSets) {
-    collectSelfContained(moduleSet)
-  }
-  
+  descriptorCache: ModuleDescriptorCache,
+  cache: ModuleSetTraversalCache,
+): List<SelfContainedValidationError> {
+  val selfContainedSets = collectSelfContainedSets(allModuleSets)
   if (selfContainedSets.isEmpty()) {
-    return
+    return emptyList()
   }
-  
-  // Validate each self-contained set in isolation
-  for (moduleSet in selfContainedSets) {
-    // Collect ALL modules from the entire hierarchy (flatten nested sets)
-    val allModulesInSet = mutableSetOf<String>()
-    fun collectAllModules(ms: ModuleSet) {
-      for (module in ms.modules) {
-        allModulesInSet.add(module.name)
-      }
-      for (nestedSet in ms.nestedSets) {
-        collectAllModules(nestedSet)
-      }
-    }
-    collectAllModules(moduleSet)
-    
-    // Collect modules with descriptors
-    val modulesWithDescriptors = allModulesInSet.mapNotNull { moduleName ->
-      descriptorCache.getOrAnalyze(moduleName)?.let { moduleName to it }
-    }
-    
-    if (modulesWithDescriptors.isEmpty()) {
-      continue
-    }
-    
-    // Validate dependencies: each module must be able to reach its dependencies
-    // within the flattened set (all modules can see all other modules)
-    val missingDeps = mutableMapOf<String, MutableSet<String>>()
-    
-    for ((moduleName, info) in modulesWithDescriptors) {
-      // Check direct and transitive dependencies
-      val visited = mutableSetOf(moduleName)
-      val queue = ArrayDeque(info.dependencies.map { it to listOf(moduleName) })
-      
-      while (queue.isNotEmpty()) {
-        val (dep, chain) = queue.removeFirst()
-        
-        if (dep in visited) {
-          continue
+
+  // Validate each self-contained set in parallel
+  return coroutineScope {
+    selfContainedSets.map { moduleSet ->
+      async {
+        val allModulesInSet = cache.getModuleNames(moduleSet)
+        val missingDeps = findMissingTransitiveDependencies(
+          modules = allModulesInSet,
+          availableModules = allModulesInSet,
+          descriptorCache = descriptorCache,
+        )
+
+        if (missingDeps.isNotEmpty()) {
+          SelfContainedValidationError(context = moduleSet.name, missingDependencies = missingDeps)
         }
-        visited.add(dep)
-        
-        // Check if dependency is in the flattened set
-        if (dep !in allModulesInSet) {
-          missingDeps.getOrPut(dep) { mutableSetOf() }.add(chain.first())
-        }
-        
-        // Add transitive dependencies
-        val depInfo = descriptorCache.getOrAnalyze(dep)
-        if (depInfo != null) {
-          for (transitiveDep in depInfo.dependencies) {
-            queue.add(transitiveDep to (chain + dep))
-          }
+        else {
+          null
         }
       }
-    }
-    
-    if (missingDeps.isNotEmpty()) {
-      error(buildString {
-        appendLine("${AnsiColors.RED}${AnsiColors.BOLD}❌ Module set '${moduleSet.name}' is marked selfContained but has unresolvable dependencies${AnsiColors.RESET}")
-        appendLine()
-        
-        for ((dep, needingModules) in missingDeps.entries.sortedByDescending { it.value.size }) {
-          appendLine("  ${AnsiColors.RED}✗${AnsiColors.RESET} Missing: ${AnsiColors.BOLD}'$dep'${AnsiColors.RESET}")
-          appendLine("    Needed by: ${needingModules.sorted().joinToString(", ")}")
-        }
-        
-        appendLine()
-        appendLine("${AnsiColors.YELLOW}💡 To fix:${AnsiColors.RESET}")
-        appendLine("1. Add the missing modules/sets to '${moduleSet.name}' to make it truly self-contained")
-        appendLine("2. Or remove selfContained=true if this set is designed to compose with other sets")
-      })
-    }
+    }.awaitAll().filterNotNull()
   }
 }
 
 /**
  * Validates that all products have resolvable module set dependencies.
- * 
- * This is Tier 2 validation that ensures products can actually load at runtime.
- * It validates that:
+ *
+ * This is **Tier 1: Product-Level Validation** that ensures products can actually load at runtime.
+ *
+ * ## What It Validates
+ *
  * 1. All module sets referenced by a product exist and are resolvable
  * 2. All modules in those sets can have their dependencies satisfied within the product's composition
- * 3. No module references dependencies outside the product's available modules
- * 
- * This catches the class of errors like:
- * "Plugin 'Java' has dependency on 'com.intellij.modules.vcs' which is not installed"
- * 
- * @param allModuleSets All available module sets (community + ultimate)
- * @param productSpecs List of (productName, ProductModulesContentSpec) pairs
- * @param descriptorCache Cache for module descriptor information
- * @throws IllegalStateException if any product has unresolvable dependencies
+ * 3. No module references dependencies outside the product's available modules (with exceptions for cross-plugin deps)
+ * 4. No duplicate content modules (would cause runtime "Plugin has duplicated content modules" error)
+ *
+ * ## Caching Strategy
+ *
+ * - **ProductModuleIndex**: Built once per product, reused for cross-product collection and validation
+ * - **crossProductModules**: Union of all product modules, computed once before validation
+ * - **Parallel execution**: Products validated concurrently via `coroutineScope`
+ *
+ * ## Per-Product vs Global Validation
+ *
+ * Each product has a different "available modules" set, so validation must run per-product.
+ * However, for non-critical modules (OPTIONAL, ON_DEMAND), the effective available set is global
+ * ([crossPluginModules] ∪ [crossProductModules]), enabling potential future optimization.
+ *
+ * @param allModuleSets All defined module sets (for suggesting fixes in error messages)
+ * @param productSpecs Product specifications to validate
+ * @param descriptorCache Cached module dependency information
+ * @param cache Cached module set traversal information
+ * @param pluginContentJobs Async jobs for extracting plugin content modules
+ * @return List of validation errors (empty if all products are valid)
  */
-internal fun validateProductModuleSets(
+internal suspend fun validateProductModuleSets(
   allModuleSets: List<ModuleSet>,
   productSpecs: List<Pair<String, ProductModulesContentSpec?>>,
   descriptorCache: ModuleDescriptorCache,
-  precomputedEmbeddedModules: Set<String>? = null,
-) {
-  data class ProductError(
-    val productName: String,
-    val missingModules: Map<String, Set<String>>,  // module -> set of dependencies it needs
-  )
-  
-  val productErrors = mutableListOf<ProductError>()
-  val moduleSetsByName = allModuleSets.associateBy { it.name }
-  
-  for ((productName, spec) in productSpecs) {
-    // Skip products without specs
-    if (spec == null) {
-      continue
-    }
-    
-    // Build index of modules available in this product
-    val productIndex = buildProductModuleIndex(productName, spec, precomputedEmbeddedModules)
-    
-    // Validate that all referenced module sets exist
-    val missingModuleSets = productIndex.referencedModuleSets.filter { it !in moduleSetsByName }
-    if (missingModuleSets.isNotEmpty()) {
-      error(buildString {
-        appendLine("${AnsiColors.RED}${AnsiColors.BOLD}❌ Product '$productName' references non-existent module sets${AnsiColors.RESET}")
-        appendLine()
-        for (setName in missingModuleSets.sorted()) {
-          appendLine("  ${AnsiColors.RED}✗${AnsiColors.RESET} Module set '${AnsiColors.BOLD}$setName${AnsiColors.RESET}' does not exist")
-        }
-        appendLine()
-        appendLine("${AnsiColors.BLUE}💡 Fix: Remove the reference or define the module set${AnsiColors.RESET}")
-      })
-    }
-    
-    // Validate no duplicate content modules in product
-    // This validation ALWAYS runs, even for products in allowUnresolvableProducts
-    val allContentModules = mutableListOf<String>()
-    for (moduleSetWithOverrides in spec.moduleSets) {
-      val moduleSet = moduleSetsByName[moduleSetWithOverrides.moduleSet.name]
-      if (moduleSet != null) {
-        allContentModules.addAll(ModuleSetTraversal.collectAllModuleNamesAsList(moduleSet))
-      }
-    }
-    for (module in spec.additionalModules) {
-      allContentModules.add(module.name)
-    }
-    
-    val duplicateModules = allContentModules.groupingBy { it }.eachCount().filter { it.value > 1 }
-    if (duplicateModules.isNotEmpty()) {
-      error(buildString {
-        appendLine("${AnsiColors.RED}${AnsiColors.BOLD}❌ Product '$productName' has duplicate content modules${AnsiColors.RESET}")
-        appendLine()
-        appendLine("${AnsiColors.YELLOW}Duplicated modules (appearing ${AnsiColors.BOLD}${duplicateModules.values.max()}${AnsiColors.RESET}${AnsiColors.YELLOW} times):${AnsiColors.RESET}")
-        for ((moduleName, count) in duplicateModules.entries.sortedBy { it.key }) {
-          appendLine("  ${AnsiColors.RED}✗${AnsiColors.RESET} ${AnsiColors.BOLD}$moduleName${AnsiColors.RESET} (appears $count times)")
-        }
-        appendLine()
-        appendLine("${AnsiColors.BLUE}💡 This causes runtime error: \"Plugin has duplicated content modules declarations\"${AnsiColors.RESET}")
-        appendLine("${AnsiColors.BLUE}Fix: Remove duplicate moduleSet() nesting or redundant module() calls${AnsiColors.RESET}")
-      })
-    }
-    
-    // Validate module dependencies within product scope
-    // Note: For non-embedded modules, we use a heuristic: if a dependency has an XML
-    // descriptor but is not in the product's content modules, we assume it's a plugin
-    // module and skip validation. This is because non-embedded content modules can
-    // depend on plugins (bundled or not). This heuristic does not verify the plugin
-    // is actually bundled with the product - that's a separate validation concern.
-    val missingDependencies = mutableMapOf<String, MutableSet<String>>()
+  cache: ModuleSetTraversalCache,
+  pluginContentJobs: Map<String, Deferred<PluginContentInfo?>> = emptyMap(),
+  additionalPlugins: Map<String, String> = emptyMap(),
+): List<ValidationError> {
+  val allPluginModules = collectAllPluginModules(pluginContentJobs)
 
-    for (moduleName in productIndex.allModules) {
-      val info = descriptorCache.getOrAnalyze(moduleName) ?: continue
-      val reachableModules = productIndex.moduleToReachableModules[moduleName] ?: emptySet()
-      val isEmbedded = moduleName in productIndex.embeddedModules
-
-      // Check direct dependencies
-      for (dependency in info.dependencies) {
-        if (dependency in reachableModules || dependency in KNOWN_MISSING_DEPENDENCIES) {
-          continue // OK - in content or known exception
-        }
-
-        if (isEmbedded) {
-          // Embedded modules: strict - must be in content
-          missingDependencies.getOrPut(moduleName) { mutableSetOf() }.add(dependency)
-        } else {
-          // Non-embedded modules: heuristic - if has descriptor, assume plugin module
-          if (!descriptorCache.hasDescriptor(dependency)) {
-            // No descriptor = truly missing
-            missingDependencies.getOrPut(moduleName) { mutableSetOf() }.add(dependency)
-          }
-          // else: has descriptor, assume it's a plugin module - OK
+  // Build product indices once and reuse for both cross-product collection and validation
+  val productIndices: Map<String, ProductModuleIndex> = coroutineScope {
+    productSpecs
+      .mapNotNull { (productName, spec) ->
+        val spec = spec ?: return@mapNotNull null
+        async {
+          productName to buildProductModuleIndex(
+            productName = productName,
+            spec = spec,
+            cache = cache,
+            pluginContentJobs = pluginContentJobs,
+          )
         }
       }
+      .awaitAll()
+      .toMap()
+  }
 
-      // Check transitive dependencies
-      val visited = mutableSetOf(moduleName)
-      val queue = ArrayDeque(info.dependencies)
+  // Collect cross-product modules from pre-built indices
+  val crossProductModules = productIndices.values.flatMapTo(HashSet()) { it.allModules }
 
-      while (queue.isNotEmpty()) {
-        val dep = queue.removeFirst()
-        if (dep in visited) continue
-        visited.add(dep)
+  // Collect union of all per-product allowedMissingDependencies for global validation
+  val globalAllowedMissing = productSpecs
+    .mapNotNull { it.second?.allowedMissingDependencies }
+    .flatten()
+    .toSet()
 
-        if (dep !in reachableModules && dep !in KNOWN_MISSING_DEPENDENCIES) {
-          if (isEmbedded) {
-            // Embedded modules: strict - must be in content
-            missingDependencies.getOrPut(moduleName) { mutableSetOf() }.add(dep)
-          } else {
-            // Non-embedded modules: heuristic - if has descriptor, assume plugin module
-            if (!descriptorCache.hasDescriptor(dep)) {
-              missingDependencies.getOrPut(moduleName) { mutableSetOf() }.add(dep)
-            }
-          }
-        }
+  val moduleSourceInfo = buildModuleSourceInfo(pluginContentJobs, productIndices, additionalPlugins)
 
-        val depInfo = descriptorCache.getOrAnalyze(dep)
-        if (depInfo != null) {
-          queue.addAll(depInfo.dependencies)
-        }
-      }
-    }
-    
-    if (missingDependencies.isNotEmpty()) {
-      productErrors.add(ProductError(productName, missingDependencies))
+  // Identify non-critical plugin modules BEFORE any validation (just module names, O(n) filter)
+  // A module is non-critical globally only if it's NOT critical (EMBEDDED/REQUIRED) in ANY product
+  val nonCriticalPluginModules = allPluginModules.filterTo(HashSet()) { moduleName ->
+    productIndices.values.none { productIndex ->
+      val loading = productIndex.moduleLoadings.get(moduleName)
+      loading == ModuleLoadingRuleValue.EMBEDDED || loading == ModuleLoadingRuleValue.REQUIRED
     }
   }
-  
-  // Report all errors
-  if (productErrors.isNotEmpty()) {
-    error(buildString {
-      appendLine("${AnsiColors.RED}${AnsiColors.BOLD}❌ Product-level validation failed: Unresolvable module dependencies${AnsiColors.RESET}")
-      appendLine()
-      
-      for (productError in productErrors) {
-        appendLine("${AnsiColors.BOLD}Product: ${productError.productName}${AnsiColors.RESET}")
-        appendLine()
-        
-        // Group by missing dependency for clearer output
-        val depToModules = mutableMapOf<String, MutableSet<String>>()
-        for ((module, deps) in productError.missingModules) {
-          for (dep in deps) {
-            depToModules.getOrPut(dep) { mutableSetOf() }.add(module)
-          }
-        }
-        
-        for ((missingDep, needingModules) in depToModules.entries.sortedByDescending { it.value.size }) {
-          appendLine("  ${AnsiColors.RED}✗${AnsiColors.RESET} Missing: ${AnsiColors.BOLD}'$missingDep'${AnsiColors.RESET}")
-          appendLine("    Needed by: ${needingModules.sorted().take(5).joinToString(", ")}")
-          if (needingModules.size > 5) {
-            appendLine("    ... and ${needingModules.size - 5} more modules")
-          }
-          
-          // Suggest which module sets contain this dependency
-          val containingSets = allModuleSets.filter { moduleSet ->
-            ModuleSetTraversal.containsModule(moduleSet, missingDep)
-          }.map { it.name }
-          
-          if (containingSets.isNotEmpty()) {
-            appendLine("    ${AnsiColors.BLUE}Suggestion:${AnsiColors.RESET} Add module set: ${containingSets.joinToString(" or ")}")
-          }
-          appendLine()
-        }
-        
-        appendLine()
+
+  // FULLY PARALLEL: Run global validation and per-product validation concurrently
+  // No dependency because per-product validation uses module NAMES (computed above),
+  // not validation RESULTS
+  return coroutineScope {
+    // Global: validate all non-critical plugin modules once
+    val globalValidationJob = async {
+      preValidateNonCriticalPluginModules(
+        nonCriticalPluginModules = nonCriticalPluginModules,
+        allPluginModules = allPluginModules,
+        crossProductModules = crossProductModules,
+        descriptorCache = descriptorCache,
+        allModuleSets = allModuleSets,
+        allowedMissing = globalAllowedMissing,
+        moduleSourceInfo = moduleSourceInfo,
+      )
+    }
+
+    // Per-product: validate everything EXCEPT non-critical plugin modules
+    val productValidationJobs = productIndices.map { (productName, productIndex) ->
+      async {
+        validateSingleProduct(
+          productIndex = productIndex,
+          spec = productSpecs.first { it.first == productName }.second!!,
+          cache = cache,
+          allModuleSets = allModuleSets,
+          allPluginModules = allPluginModules,
+          crossProductModules = crossProductModules,
+          descriptorCache = descriptorCache,
+          nonCriticalPluginModules = nonCriticalPluginModules,
+          moduleSourceInfo = moduleSourceInfo,
+        )
       }
-      
-      appendLine("${AnsiColors.BLUE}💡 This will cause runtime errors: \"Plugin X has dependency on Y which is not installed\"${AnsiColors.RESET}")
-      appendLine()
-      appendLine("${AnsiColors.BOLD}To fix:${AnsiColors.RESET}")
-      appendLine("${AnsiColors.BLUE}1.${AnsiColors.RESET} Add the required module sets to the product's getProductContentDescriptor()")
-      appendLine("${AnsiColors.BLUE}2.${AnsiColors.RESET} Or add individual modules via module()/embeddedModule()")
-      appendLine("${AnsiColors.BLUE}3.${AnsiColors.RESET} Or add the product to allowUnresolvableProducts if this is intentional")
-    })
+    }
+
+    // Await all and merge
+    val globalErrors = globalValidationJob.await()
+    val productErrors = productValidationJobs.awaitAll().flatten()
+    globalErrors + productErrors
   }
 }
 
-// Helper functions
-
 /**
- * Builds an index of all modules available in a specific product.
- * This is product-scoped, unlike the global ModuleSetIndex.
+ * Validates a single product and returns any errors found.
+ *
+ * @param nonCriticalPluginModules Modules to skip (they're validated globally in parallel).
+ *        These are non-critical plugin modules that can depend on cross-plugin/cross-product modules.
+ * @param moduleSourceInfo Unified source info for all modules (from plugins and module sets).
  */
-private data class ProductModuleIndex(
-  val productName: String,
-  val allModules: Set<String>,  // All modules available in this product
-  val embeddedModules: Set<String>,  // Modules with EMBEDDED loading
-  val moduleToReachableModules: Map<String, Set<String>>,  // Product-scoped reachability
-  val referencedModuleSets: Set<String>,  // Module set names used by product
-)
-
-private fun buildProductModuleIndex(
-  productName: String,
+private suspend fun validateSingleProduct(
+  productIndex: ProductModuleIndex,
   spec: ProductModulesContentSpec,
-  precomputedEmbeddedModules: Set<String>? = null,
-): ProductModuleIndex {
-  val allModules = mutableSetOf<String>()
-  val referencedModuleSets = mutableSetOf<String>()
+  cache: ModuleSetTraversalCache,
+  allModuleSets: List<ModuleSet>,
+  allPluginModules: Set<String>,
+  crossProductModules: Set<String>,
+  descriptorCache: ModuleDescriptorCache,
+  nonCriticalPluginModules: Set<String>,
+  moduleSourceInfo: Map<String, ModuleSourceInfo>,
+): List<ValidationError> {
+  val errors = mutableListOf<ValidationError>()
+  val productName = productIndex.productName
 
-  // Recursively collect all modules from a module set
-  fun collectModulesFromSet(moduleSet: ModuleSet) {
-    for (module in moduleSet.modules) {
-      allModules.add(module.name)
+  // Check for missing module sets
+  val missingModuleSets = productIndex.referencedModuleSets.filterNot { cache.getModuleSet(it) != null }
+  if (missingModuleSets.isNotEmpty()) {
+    errors.add(MissingModuleSetsError(context = productName, missingModuleSets = missingModuleSets.toSet()))
+  }
+
+  // Check for duplicate content modules (single-pass detection)
+  // OPTIMIZED: O(n) single pass instead of O(n log n) groupingBy
+  val seen = HashSet<String>()
+  val duplicateModules = HashMap<String, Int>()
+
+  for (moduleSetWithOverrides in spec.moduleSets) {
+    val moduleSet = cache.getModuleSet(moduleSetWithOverrides.moduleSet.name)
+    if (moduleSet != null) {
+      for (moduleName in cache.getModuleNames(moduleSet)) {
+        if (!seen.add(moduleName)) {
+          duplicateModules.put(moduleName, (duplicateModules.get(moduleName) ?: 1) + 1)
+        }
+      }
+    }
+  }
+  for (module in spec.additionalModules) {
+    if (!seen.add(module.name)) {
+      duplicateModules.put(module.name, (duplicateModules.get(module.name) ?: 1) + 1)
+    }
+  }
+  if (duplicateModules.isNotEmpty()) {
+    errors.add(DuplicateModulesError(context = productName, duplicates = duplicateModules.toSortedMap()))
+  }
+
+  // Check for missing dependencies
+  val criticalModules = productIndex.moduleLoadings
+    .filterValues { it == ModuleLoadingRuleValue.EMBEDDED || it == ModuleLoadingRuleValue.REQUIRED }
+    .keys
+
+  // Skip ALL non-critical plugin modules (they're validated globally in parallel)
+  val modulesToValidate = productIndex.allModules
+    .filterNotTo(HashSet()) { it in nonCriticalPluginModules }
+
+  val missingDeps = findMissingTransitiveDependencies(
+    modules = modulesToValidate,
+    availableModules = productIndex.allModules,
+    descriptorCache = descriptorCache,
+    allowedMissing = spec.allowedMissingDependencies,
+    crossPluginModules = allPluginModules,
+    crossProductModules = crossProductModules,
+    criticalModules = criticalModules,
+  )
+
+  if (missingDeps.isNotEmpty()) {
+    errors.add(MissingDependenciesError(
+      context = productName,
+      missingModules = missingDeps,
+      allModuleSets = allModuleSets,
+      moduleSourceInfo = moduleSourceInfo,
+    ))
+  }
+
+  return errors
+}
+
+private fun collectSelfContainedSets(allModuleSets: List<ModuleSet>): List<ModuleSet> {
+  val result = mutableListOf<ModuleSet>()
+
+  fun visit(moduleSet: ModuleSet) {
+    if (moduleSet.selfContained) {
+      result.add(moduleSet)
     }
     for (nestedSet in moduleSet.nestedSets) {
-      collectModulesFromSet(nestedSet)
+      visit(nestedSet)
     }
   }
 
-  // Process all module sets referenced by the product
-  // Use moduleSetWithOverrides.moduleSet directly - it already contains the full ModuleSet
+  for (moduleSet in allModuleSets) {
+    visit(moduleSet)
+  }
+  return result
+}
+
+private suspend fun collectAllPluginModules(pluginContentJobs: Map<String, Deferred<PluginContentInfo?>>): Set<String> {
+  val result = mutableSetOf<String>()
+  for ((_, job) in pluginContentJobs) {
+    job.await()?.contentModules?.let { result.addAll(it) }
+  }
+  return result
+}
+
+/**
+ * Pre-validates non-critical plugin modules globally against the union of all product/plugin modules.
+ *
+ * This runs IN PARALLEL with per-product validation (no dependency between them).
+ * Non-critical modules can depend on any module in [crossProductModules] or [allPluginModules],
+ * so their validation result is the same across all products.
+ *
+ * Each module is validated in parallel for maximum throughput.
+ *
+ * @param nonCriticalPluginModules Pre-computed set of non-critical plugin module names
+ * @param moduleSourceInfo Unified source info for all modules (from plugins and module sets).
+ * @return List of validation errors for modules with missing dependencies
+ */
+private suspend fun preValidateNonCriticalPluginModules(
+  nonCriticalPluginModules: Set<String>,
+  allPluginModules: Set<String>,
+  crossProductModules: Set<String>,
+  descriptorCache: ModuleDescriptorCache,
+  allModuleSets: List<ModuleSet>,
+  allowedMissing: Set<String>,
+  moduleSourceInfo: Map<String, ModuleSourceInfo>,
+): List<ValidationError> {
+  if (nonCriticalPluginModules.isEmpty()) {
+    return emptyList()
+  }
+
+  // PARALLEL: Validate each module independently
+  // Each BFS traversal is independent and uses thread-safe descriptorCache
+  val perModuleResults = coroutineScope {
+    nonCriticalPluginModules.map { moduleName ->
+      async {
+        val missingDeps = findMissingTransitiveDependencies(
+          modules = setOf(moduleName),
+          availableModules = crossProductModules,
+          descriptorCache = descriptorCache,
+          allowedMissing = allowedMissing,
+          crossPluginModules = allPluginModules,
+          crossProductModules = crossProductModules,
+          criticalModules = emptySet(),
+        )
+        moduleName to missingDeps
+      }
+    }.awaitAll()
+  }
+
+  // Merge results: collect all missing dependencies
+  val globallyMissingDeps = HashMap<String, MutableSet<String>>()
+  for ((_, missingDeps) in perModuleResults) {
+    for ((dep, needers) in missingDeps) {
+      globallyMissingDeps.computeIfAbsent(dep) { HashSet() }.addAll(needers)
+    }
+  }
+
+  if (globallyMissingDeps.isEmpty()) {
+    return emptyList()
+  }
+
+  return listOf(MissingDependenciesError(
+    context = "Non-critical plugin modules (global validation)",
+    missingModules = globallyMissingDeps,
+    allModuleSets = allModuleSets,
+    moduleSourceInfo = moduleSourceInfo,
+  ))
+}
+
+/**
+ * Finds missing transitive dependencies using parallel BFS traversal.
+ *
+ * ## Performance Characteristics
+ *
+ * - **Parallel validation**: Each module is validated concurrently via coroutines
+ * - **Module analysis is cached**: Uses [descriptorCache] with thread-safe AsyncCache
+ * - **BFS traversal stops at boundaries**: Does not traverse into cross-plugin/cross-product modules
+ * - **Per-product context**: Result depends on [availableModules] and [allowedMissing]
+ *
+ * ## Traversal Logic
+ *
+ * For each dependency encountered:
+ * 1. If in [availableModules] → valid, traverse into its dependencies
+ * 2. If in [allowedMissing] → skip (explicitly allowed to be missing)
+ * 3. If in [crossPluginModules] and source is NOT critical → valid, don't traverse (external responsibility)
+ * 4. If in [crossProductModules] and source is NOT critical → valid, don't traverse (external responsibility)
+ * 5. Otherwise → missing dependency error
+ *
+ * @param modules Modules to check dependencies for
+ * @param availableModules Modules that are available within this product/context
+ * @param descriptorCache Cache for module descriptor information (thread-safe, shared across all validations)
+ * @param allowedMissing Dependencies explicitly allowed to be missing (per-product configuration)
+ * @param crossPluginModules Modules from other plugins (valid for non-critical modules)
+ * @param crossProductModules Modules from other products (valid for non-critical modules)
+ * @param criticalModules Modules with EMBEDDED or REQUIRED loading that cannot depend on cross-plugin modules
+ * @return Map of missing dependency → set of modules that need it
+ */
+internal suspend fun findMissingTransitiveDependencies(
+  modules: Set<String>,
+  availableModules: Set<String>,
+  descriptorCache: ModuleDescriptorCache,
+  allowedMissing: Set<String> = emptySet(),
+  crossPluginModules: Set<String> = emptySet(),
+  crossProductModules: Set<String> = emptySet(),
+  criticalModules: Set<String> = emptySet(),
+): Map<String, Set<String>> {
+  if (modules.isEmpty()) {
+    return emptyMap()
+  }
+
+  // PARALLEL: Each module's BFS is independent, cache is thread-safe
+  val perModuleResults = coroutineScope {
+    modules.map { moduleName ->
+      async {
+        validateModuleDependencies(
+          moduleName = moduleName,
+          availableModules = availableModules,
+          descriptorCache = descriptorCache,
+          allowedMissing = allowedMissing,
+          crossPluginModules = crossPluginModules,
+          crossProductModules = crossProductModules,
+          isCritical = criticalModules.contains(moduleName),
+        )
+      }
+    }.awaitAll()
+  }
+
+  // Merge results
+  val missingDeps = HashMap<String, MutableSet<String>>()
+  for ((moduleName, moduleMissingDeps) in perModuleResults) {
+    for (dep in moduleMissingDeps) {
+      missingDeps.computeIfAbsent(dep) { HashSet() }.add(moduleName)
+    }
+  }
+  return missingDeps
+}
+
+/**
+ * Validates a single module's transitive dependencies via BFS.
+ * Thread-safe: uses only thread-safe cache and local state.
+ */
+private suspend fun validateModuleDependencies(
+  moduleName: String,
+  availableModules: Set<String>,
+  descriptorCache: ModuleDescriptorCache,
+  allowedMissing: Set<String>,
+  crossPluginModules: Set<String>,
+  crossProductModules: Set<String>,
+  isCritical: Boolean,
+): Pair<String, Set<String>> {
+  val info = descriptorCache.getOrAnalyze(moduleName) ?: return moduleName to emptySet()
+
+  val missingDeps = HashSet<String>()
+  val visited = HashSet<String>()
+  visited.add(moduleName)
+  val queue = ArrayDeque(info.dependencies)
+
+  while (queue.isNotEmpty()) {
+    val dep = queue.removeFirst()
+    if (!visited.add(dep)) {
+      continue
+    }
+
+    when {
+      availableModules.contains(dep) -> {
+        // Present - traverse into its deps (cache handles deduplication)
+        descriptorCache.getOrAnalyze(dep)?.dependencies?.let { queue.addAll(it) }
+      }
+      allowedMissing.contains(dep) -> {
+        // Explicitly allowed to be missing - skip
+      }
+      !isCritical && crossPluginModules.contains(dep) -> {
+        // Valid cross-plugin optional dependency - skip
+      }
+      !isCritical && crossProductModules.contains(dep) -> {
+        // Module exists in another product - valid for optional deps
+      }
+      else -> {
+        // Missing dependency
+        missingDeps.add(dep)
+      }
+    }
+  }
+
+  return moduleName to missingDeps
+}
+
+/**
+ * Builds unified module source info for error message formatting.
+ *
+ * Two-step process:
+ * 1. Track ALL plugin modules from [pluginContentJobs] (ensures non-bundled plugins are covered)
+ * 2. Enrich with product-specific info from [productIndices] (adds module sets, products)
+ *
+ * This ensures that validation errors for ANY module (bundled or not) will have source info.
+ */
+private suspend fun buildModuleSourceInfo(
+  pluginContentJobs: Map<String, Deferred<PluginContentInfo?>>,
+  productIndices: Map<String, ProductModuleIndex>,
+  additionalPlugins: Map<String, String>,
+): Map<String, ModuleSourceInfo> {
+  val result = HashMap<String, ModuleSourceInfo>()
+
+  // Step A: ALL plugin modules (including non-bundled plugins)
+  for ((pluginName, job) in pluginContentJobs) {
+    val pluginInfo = job.await() ?: continue
+    for (moduleName in pluginInfo.contentModules) {
+      result.put(moduleName, ModuleSourceInfo(
+        loadingMode = pluginInfo.contentModuleLoadings?.get(moduleName),
+        sourcePlugin = pluginName,
+        additionalPluginSource = additionalPlugins.get(pluginName),
+      ))
+    }
+  }
+
+  // Step B: product-specific info (module sets, products, additional modules)
+  for ((productName, productIndex) in productIndices) {
+    for (moduleName in productIndex.allModules) {
+      val existing = result.get(moduleName)
+      result.put(moduleName, ModuleSourceInfo(
+        loadingMode = existing?.loadingMode ?: productIndex.moduleLoadings.get(moduleName),
+        sourcePlugin = existing?.sourcePlugin ?: productIndex.moduleToSourcePlugin.get(moduleName),
+        sourceModuleSet = existing?.sourceModuleSet ?: productIndex.moduleToSourceModuleSet.get(moduleName),
+        sourceProducts = (existing?.sourceProducts ?: emptySet()) + productName,
+        additionalPluginSource = existing?.additionalPluginSource,
+      ))
+    }
+  }
+
+  return result
+}
+
+private data class ProductModuleIndex(
+  @JvmField val productName: String,
+  @JvmField val allModules: Set<String>,
+  @JvmField val referencedModuleSets: Set<String>,
+  @JvmField val moduleLoadings: Map<String, ModuleLoadingRuleValue?>,
+  /** Map module name -> bundled plugin name that contributed it */
+  @JvmField val moduleToSourcePlugin: Map<String, String> = emptyMap(),
+  /** Map module name -> module set name that contributed it */
+  @JvmField val moduleToSourceModuleSet: Map<String, String> = emptyMap(),
+)
+
+private suspend fun buildProductModuleIndex(
+  productName: String,
+  spec: ProductModulesContentSpec,
+  cache: ModuleSetTraversalCache,
+  pluginContentJobs: Map<String, Deferred<PluginContentInfo?>> = emptyMap(),
+): ProductModuleIndex {
+  val allModules = HashSet<String>()
+  val referencedModuleSets = HashSet<String>()
+  val moduleLoadings = HashMap<String, ModuleLoadingRuleValue?>()
+  val moduleToSourcePlugin = HashMap<String, String>()
+  val moduleToSourceModuleSet = HashMap<String, String>()
+
   for (moduleSetWithOverrides in spec.moduleSets) {
     val moduleSet = moduleSetWithOverrides.moduleSet
     referencedModuleSets.add(moduleSet.name)
-    collectModulesFromSet(moduleSet)
+    // O(1) lookup from cache instead of re-traversal
+    for ((moduleName, info) in cache.getModulesWithLoading(moduleSet)) {
+      allModules.add(moduleName)
+      moduleLoadings.put(moduleName, info.loading)
+      moduleToSourceModuleSet.put(moduleName, info.sourceModuleSet)
+    }
   }
 
-  // Add additional individual modules
   for (module in spec.additionalModules) {
     allModules.add(module.name)
+    moduleLoadings.put(module.name, module.loading)
   }
 
-  // Use precomputed embedded modules if available (optimization to avoid recomputing),
-  // otherwise compute just for this product's modules
-  val embeddedModules = if (precomputedEmbeddedModules != null) {
-    // Filter to only include modules that are in this product
-    allModules.filterTo(mutableSetOf()) { it in precomputedEmbeddedModules }
+  for (pluginName in spec.bundledPlugins) {
+    val pluginInfo = pluginContentJobs.get(pluginName)?.await() ?: continue
+    for (moduleName in pluginInfo.contentModules) {
+      allModules.add(moduleName)
+      moduleToSourcePlugin.put(moduleName, pluginName)
+      pluginInfo.contentModuleLoadings?.get(moduleName)?.let { moduleLoadings.put(moduleName, it) }
+    }
   }
-  else {
-    // Fallback: compute embedded modules for this product
-    val result = mutableSetOf<String>()
-    fun collectEmbeddedFromSet(moduleSet: ModuleSet) {
-      for (module in moduleSet.modules) {
-        if (module.loading == ModuleLoadingRuleValue.EMBEDDED) {
-          result.add(module.name)
-        }
-      }
-      for (nestedSet in moduleSet.nestedSets) {
-        collectEmbeddedFromSet(nestedSet)
-      }
-    }
-    for (moduleSetWithOverrides in spec.moduleSets) {
-      collectEmbeddedFromSet(moduleSetWithOverrides.moduleSet)
-    }
-    for (module in spec.additionalModules) {
-      if (module.loading == ModuleLoadingRuleValue.EMBEDDED) {
-        result.add(module.name)
-      }
-    }
-    result
-  }
-
-  // Build product-scoped reachability: each module can see all other modules in the product
-  // This is different from module set validation where modules can only see within their set
-  val moduleToReachableModules = allModules.associateWith { allModules }
 
   return ProductModuleIndex(
     productName = productName,
     allModules = allModules,
-    embeddedModules = embeddedModules,
-    moduleToReachableModules = moduleToReachableModules,
     referencedModuleSets = referencedModuleSets,
+    moduleLoadings = moduleLoadings,
+    moduleToSourcePlugin = moduleToSourcePlugin,
+    moduleToSourceModuleSet = moduleToSourceModuleSet,
   )
 }
 
-
+// endregion

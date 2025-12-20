@@ -6,7 +6,10 @@ import com.intellij.openapi.Disposable;
 import com.intellij.openapi.client.ClientAppSession;
 import com.intellij.openapi.client.ClientProjectSession;
 import com.intellij.openapi.command.CommandProcessor;
-import com.intellij.openapi.command.UndoConfirmationPolicy;
+import com.intellij.openapi.command.impl.cmd.CmdEvent;
+import com.intellij.openapi.command.impl.cmd.CmdEventTransform;
+import com.intellij.openapi.command.impl.cmd.MutableCmdMeta;
+import com.intellij.openapi.command.impl.cmd.UndoMeta;
 import com.intellij.openapi.command.undo.*;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
@@ -162,8 +165,14 @@ final class UndoClientState implements Disposable {
   void commandStarted(@NotNull CmdEvent cmdEvent, @NotNull CurrentEditorProvider editorProvider) {
     commandBuilder.commandStarted(cmdEvent, editorProvider);
     UndoSpy undoSpy = UndoSpy.getInstance();
-    if (undoSpy != null) {
-      undoSpy.commandBeforeStarted(project, editorProvider.getCurrentEditor(project), commandBuilder.getOriginalDocument());
+    if (undoSpy != null && cmdEvent.meta() instanceof MutableCmdMeta mutableMeta) {
+      mutableMeta.addUndoMeta(
+        UndoMeta.create(
+          project,
+          editorProvider.getCurrentEditor(project),
+          commandBuilder.getOriginalDocument()
+        )
+      );
     }
   }
 
@@ -223,15 +232,7 @@ final class UndoClientState implements Disposable {
         action instanceof NonUndoableAction,
         "Undoable actions allowed inside commands only (see com.intellij.openapi.command.CommandProcessor.executeCommand())"
       );
-      CmdEvent cmdEvent = CmdEvent.create(
-        CommandIdService.currCommandId(),
-        null,
-        "",
-        null,
-        UndoConfirmationPolicy.DEFAULT,
-        false,
-        false
-      );
+      CmdEvent cmdEvent = CmdEventTransform.getInstance().createNonUndoable();
       commandStarted(cmdEvent, editorProvider);
       try {
         commandBuilder.addUndoableAction(action);
@@ -252,6 +253,10 @@ final class UndoClientState implements Disposable {
     commandMerger.invalidateActionsFor(ref);
     undoStacksHolder.invalidateActionsFor(ref);
     redoStacksHolder.invalidateActionsFor(ref);
+  }
+
+  void resetOriginalDocument() {
+    commandBuilder.resetOriginalDocument();
   }
 
   boolean isUndoInProgress() {
@@ -514,24 +519,17 @@ final class UndoClientState implements Disposable {
   private void composeStartFinishGroup(@NotNull UndoableGroup createdGroup) {
     FinishMarkAction finishMark = createdGroup.getFinishMark();
     if (finishMark != null) {
-      boolean global = false;
-      String commandName = null;
-      UndoRedoList<UndoableGroup> stack = undoStacksHolder.getStack(finishMark.getAffectedDocument());
-      Iterator<UndoableGroup> iterator = stack.descendingIterator();
-      while (iterator.hasNext()) {
-        UndoableGroup group = iterator.next();
-        if (group.isGlobal()) {
-          global = true;
-          commandName = group.getCommandName();
-          break;
-        }
+      DocumentReference affectedDoc = finishMark.getAffectedDocuments()[0];
+      Iterator<UndoableGroup> stack = undoStacksHolder.getStack(affectedDoc).descendingIterator();
+      while (stack.hasNext()) {
+        UndoableGroup group = stack.next();
         if (group.getStartMark() != null) {
           break;
         }
-      }
-      if (global) {
-        finishMark.setGlobal(true);
-        finishMark.setCommandName(commandName);
+        if (group.isGlobal()) {
+          finishMark.markGlobal(group.getCommandName());
+          break;
+        }
       }
     }
   }
