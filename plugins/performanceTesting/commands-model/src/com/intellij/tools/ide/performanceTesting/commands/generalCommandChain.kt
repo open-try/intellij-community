@@ -461,15 +461,20 @@ fun <T : CommandChain> T.createAllServicesAndExtensions(): T = apply {
   addCommand("${CMD_PREFIX}CreateAllServicesAndExtensions")
 }
 
+enum class RunConfigurationMode {
+  TILL_STARTED,
+  TILL_TERMINATED
+}
+
 fun <T : CommandChain> T.runConfiguration(
   configurationName: String,
-  mode: String = "TILL_TERMINATED",
+  mode: RunConfigurationMode = RunConfigurationMode.TILL_TERMINATED,
   failureExpected: Boolean = false,
   debug: Boolean = false,
 ): T = apply {
   val command = mutableListOf("${CMD_PREFIX}runConfiguration")
   command.add("-configurationName=$configurationName")
-  command.add("-mode=$mode")
+  command.add("-mode=${mode.name}")
   if (failureExpected) {
     command.add("-failureExpected")
   }
@@ -1230,8 +1235,8 @@ fun <T : CommandChain> T.disableKotlinNotification(): T = apply {
   addCommand("${CMD_PREFIX}disableKotlinNotification")
 }
 
-fun <T : CommandChain> T.scrollEditor(): T = apply {
-  addCommand("${CMD_PREFIX}scrollEditor")
+fun <T : CommandChain> T.scrollEditor(scrollDelay: Int = 100): T = apply {
+  addCommand("${CMD_PREFIX}scrollEditor $scrollDelay")
 }
 
 

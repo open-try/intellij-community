@@ -27,6 +27,7 @@ import com.intellij.debugger.statistics.DebuggerStatistics;
 import com.intellij.debugger.ui.impl.watch.CompilingEvaluatorImpl;
 import com.intellij.debugger.ui.overhead.OverheadProducer;
 import com.intellij.icons.AllIcons;
+import com.intellij.java.JavaPluginDisposable;
 import com.intellij.openapi.application.AccessToken;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ReadAction;
@@ -97,6 +98,10 @@ public abstract class Breakpoint<P extends JavaBreakpointProperties> implements 
 
   public @NotNull Project getProject() {
     return myProject;
+  }
+
+  private @NotNull BreakpointManager getBreakpointManager() {
+    return DebuggerManagerEx.getInstanceEx(myProject).getBreakpointManager();
   }
 
   protected @NotNull P getProperties() {
@@ -228,7 +233,7 @@ public abstract class Breakpoint<P extends JavaBreakpointProperties> implements 
         breakpoint.emitBreakpointChanged();
       })
       .coalesceBy(myProject, this)
-      .expireWith(myProject)
+      .expireWith(JavaPluginDisposable.getInstance(myProject))
       .submit(RELOAD_EXECUTOR);
   }
 
@@ -394,7 +399,9 @@ public abstract class Breakpoint<P extends JavaBreakpointProperties> implements 
         buf.append("\n");
       }
       if (!buf.isEmpty()) {
-        debugProcess.printToConsole(buf.toString());
+        var msg = buf.toString();
+        getBreakpointManager().multicastLogMessage(this, msg, debugProcess);
+        debugProcess.printToConsole(msg);
       }
     }
     if (isRemoveAfterHit()) {
@@ -622,7 +629,7 @@ public abstract class Breakpoint<P extends JavaBreakpointProperties> implements 
       }
 
       private void removeBreakpoint() {
-        AppUIUtil.invokeOnEdt(() -> DebuggerManagerEx.getInstanceEx(myProject).getBreakpointManager().removeBreakpoint(Breakpoint.this));
+        AppUIUtil.invokeOnEdt(() -> getBreakpointManager().removeBreakpoint(Breakpoint.this));
         debugProcess.removeDebugProcessListener(this);
       }
     });

@@ -1015,8 +1015,8 @@ public class PyTypingTest extends PyTestCase {
   }
 
   // PY-21864
-  public void testLocalVariableAnnotationAheadOfTimeOnlyFirstHintConsidered() {
-    doTest("int",
+  public void testLocalVariableAnnotationAheadOfTimeMostRecentHintConsidered() {
+    doTest("str",
            """
              x: int
              x = foo()
@@ -6833,6 +6833,29 @@ public class PyTypingTest extends PyTestCase {
       
       
       expr = NonWorkingClass().add_two
+      """);
+  }
+
+  // PY-86463
+  public void testMatchingWithInheritedGenericProtocol() {
+    doTest("int", """
+      from typing import Protocol
+      
+      class P[T](Protocol):
+          def method(self, x: T) -> T:
+              pass
+      
+      class P2[T](P[T], Protocol):
+          pass
+      
+      class Impl:
+          def method(self, x: int) -> int:
+              return 42
+      
+      def expects_generic[T](x: P2[T]) -> T:
+          return x.method()
+      
+      expr = expects_generic(Impl())
       """);
   }
 

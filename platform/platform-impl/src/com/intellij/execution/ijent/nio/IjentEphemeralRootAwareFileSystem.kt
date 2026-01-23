@@ -13,6 +13,7 @@ import java.io.File
 import java.net.URI
 import java.nio.file.*
 import java.nio.file.attribute.BasicFileAttributes
+import java.nio.file.attribute.FileAttributeView
 import java.nio.file.attribute.UserPrincipalLookupService
 import java.nio.file.spi.FileSystemProvider
 import kotlin.io.path.Path
@@ -216,6 +217,10 @@ class IjentEphemeralRootAwareFileSystemProvider(
     return originalFsProvider.scheme
   }
 
+  override fun <V : FileAttributeView?> getFileAttributeView(path: Path?, type: Class<V?>?, vararg options: LinkOption?): V? {
+    return super.getFileAttributeView(path, type, *options)
+  }
+
   override fun <A : BasicFileAttributes> readAttributes(path: Path, type: Class<A>, vararg options: LinkOption): A {
     return when {
       SystemInfo.isWindows -> ijentFsProvider.readAttributesUsingDosAttributesAdapter(path, path.toIjentPath(), type, *options)
@@ -224,7 +229,7 @@ class IjentEphemeralRootAwareFileSystemProvider(
   }
 
   override fun copy(source: Path, target: Path, vararg options: CopyOption?) {
-    if (source.getEelDescriptor() == target.getEelDescriptor()) {
+    if (source.getEelDescriptor() == target.getEelDescriptor() && source.fileSystem == target.fileSystem) {
       super.copy(source, target, *options)
     }
     else {
@@ -233,7 +238,7 @@ class IjentEphemeralRootAwareFileSystemProvider(
   }
 
   override fun move(source: Path, target: Path, vararg options: CopyOption?) {
-    if (source.getEelDescriptor() == target.getEelDescriptor()) {
+    if (source.getEelDescriptor() == target.getEelDescriptor() && source.fileSystem == target.fileSystem) {
       super.move(source, target, *options)
     }
     else {

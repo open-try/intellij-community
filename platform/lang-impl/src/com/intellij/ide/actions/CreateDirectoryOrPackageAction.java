@@ -40,7 +40,7 @@ import com.intellij.ui.*;
 import com.intellij.ui.speedSearch.SpeedSearchUtil;
 import com.intellij.util.PlatformIcons;
 import com.intellij.util.containers.ContainerUtil;
-import com.intellij.util.containers.FList;
+import com.intellij.util.text.matching.MatchedFragment;
 import com.intellij.util.ui.UIUtil;
 import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
@@ -461,8 +461,11 @@ public class CreateDirectoryOrPackageAction extends AnAction implements DumbAwar
             }
 
             String text = value == null ? "" : value.displayText;
-            FList<TextRange> ranges = currentMatcher == null ? FList.emptyList() : currentMatcher.matchingFragments(text);
-            SpeedSearchUtil.appendColoredFragments(this, text, ranges, SimpleTextAttributes.REGULAR_ATTRIBUTES, MATCHED);
+            List<MatchedFragment> ranges = currentMatcher == null ? List.of() : currentMatcher.match(text);
+            if (ranges != null) {
+              List<@NotNull TextRange> colored = ContainerUtil.map(ranges, f -> TextRange.create(f.getStartOffset(), f.getEndOffset()));
+              SpeedSearchUtil.appendColoredFragments(this, text, colored, SimpleTextAttributes.REGULAR_ATTRIBUTES, MATCHED);
+            }
             setIcon(value == null ? null : value.icon);
           }
         };

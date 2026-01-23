@@ -8,12 +8,11 @@ import com.intellij.openapi.editor.colors.EditorFontType;
 import com.intellij.openapi.editor.impl.EditorImpl;
 import com.intellij.openapi.editor.markup.TextAttributes;
 import com.intellij.openapi.util.Disposer;
-import com.intellij.openapi.util.TextRange;
 import com.intellij.openapi.util.registry.Registry;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.refactoring.rename.inplace.InplaceRefactoring;
 import com.intellij.ui.JBColor;
-import com.intellij.util.containers.FList;
+import com.intellij.util.text.matching.MatchedFragment;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -64,10 +63,10 @@ final class LookupPreview {
         return itemText;
       }
 
-      FList<TextRange> fragments = LookupCellRenderer.getMatchingFragments(prefix, itemText);
+      @Nullable List<@NotNull MatchedFragment> fragments = LookupCellRenderer.getMatchingFragmentList(prefix, itemText);
       if (fragments != null && !fragments.isEmpty()) {
-        List<TextRange> list = new ArrayList<>(fragments);
-        return itemText.substring(list.get(list.size() - 1).getEndOffset());
+        List<MatchedFragment> list = new ArrayList<>(fragments);
+        return itemText.substring(list.getLast().getEndOffset());
       }
     }
     return "";

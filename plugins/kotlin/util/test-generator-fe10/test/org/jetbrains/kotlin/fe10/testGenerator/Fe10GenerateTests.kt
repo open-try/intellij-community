@@ -1,6 +1,7 @@
-// Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
+// Copyright 2000-2026 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.kotlin.fe10.testGenerator
 
+import com.intellij.testFramework.PerformanceUnitTest
 import com.intellij.testFramework.TestIndexingModeSupporter.IndexingMode
 import org.jetbrains.kotlin.AbstractDataFlowValueRenderingTest
 import org.jetbrains.kotlin.addImport.AbstractK1AddImportTest
@@ -49,7 +50,6 @@ import org.jetbrains.kotlin.idea.completion.test.weighers.AbstractSmartCompletio
 import org.jetbrains.kotlin.idea.configuration.gradle.AbstractGradleConfigureProjectByChangingFileTest
 import org.jetbrains.kotlin.idea.conversion.copy.AbstractK1LiteralTextToKotlinCopyPasteTest
 import org.jetbrains.kotlin.idea.conversion.copy.AbstractLiteralKotlinToKotlinCopyPasteTest
-import org.jetbrains.kotlin.idea.coverage.AbstractKotlinCoverageOutputFilesTest
 import org.jetbrains.kotlin.idea.debugger.evaluate.AbstractK1CodeFragmentAutoImportTest
 import org.jetbrains.kotlin.idea.debugger.evaluate.AbstractK1CodeFragmentCompletionHandlerTest
 import org.jetbrains.kotlin.idea.debugger.evaluate.AbstractK1CodeFragmentCompletionTest
@@ -68,10 +68,10 @@ import org.jetbrains.kotlin.idea.folding.AbstractKotlinFoldingTest
 import org.jetbrains.kotlin.idea.hierarchy.AbstractHierarchyTest
 import org.jetbrains.kotlin.idea.hierarchy.AbstractHierarchyWithLibTest
 import org.jetbrains.kotlin.idea.highlighter.*
-import org.jetbrains.kotlin.idea.imports.AbstractK1JsOptimizeImportsTest
-import org.jetbrains.kotlin.idea.imports.AbstractK1JvmOptimizeImportsTest
 import org.jetbrains.kotlin.idea.imports.AbstractK1AutoImportTest
 import org.jetbrains.kotlin.idea.imports.AbstractK1FilteringAutoImportTest
+import org.jetbrains.kotlin.idea.imports.AbstractK1JsOptimizeImportsTest
+import org.jetbrains.kotlin.idea.imports.AbstractK1JvmOptimizeImportsTest
 import org.jetbrains.kotlin.idea.index.AbstractKotlinTypeAliasByExpansionShortNameIndexTest
 import org.jetbrains.kotlin.idea.inspections.*
 import org.jetbrains.kotlin.idea.intentions.AbstractConcatenatedStringGeneratorTest
@@ -83,14 +83,9 @@ import org.jetbrains.kotlin.idea.internal.AbstractBytecodeToolWindowMultiplatfor
 import org.jetbrains.kotlin.idea.internal.AbstractBytecodeToolWindowTest
 import org.jetbrains.kotlin.idea.kdoc.AbstractKDocHighlightingTest
 import org.jetbrains.kotlin.idea.kdoc.AbstractKDocTypingTest
-import org.jetbrains.kotlin.idea.maven.AbstractKotlinMavenInspectionTest
-import org.jetbrains.kotlin.idea.maven.configuration.AbstractMavenConfigureProjectByChangingFileTest
 import org.jetbrains.kotlin.idea.navigation.*
 import org.jetbrains.kotlin.idea.navigationToolbar.AbstractKotlinNavBarTest
 import org.jetbrains.kotlin.idea.parameterInfo.AbstractParameterInfoTest
-import org.jetbrains.kotlin.idea.perf.stats.AbstractPerformanceBasicCompletionHandlerStatNamesTest
-import org.jetbrains.kotlin.idea.perf.stats.AbstractPerformanceHighlightingStatNamesTest
-import org.jetbrains.kotlin.idea.perf.synthetic.*
 import org.jetbrains.kotlin.idea.projectView.AbstractKotlinProjectViewTest
 import org.jetbrains.kotlin.idea.quickfix.AbstractK1QuickFixMultiFileTest
 import org.jetbrains.kotlin.idea.quickfix.AbstractK1QuickFixMultiModuleTest
@@ -102,8 +97,8 @@ import org.jetbrains.kotlin.idea.refactoring.copy.AbstractMultiModuleCopyTest
 import org.jetbrains.kotlin.idea.refactoring.inline.AbstractInlineMultiFileTest
 import org.jetbrains.kotlin.idea.refactoring.inline.AbstractInlineTest
 import org.jetbrains.kotlin.idea.refactoring.inline.AbstractInlineTestWithSomeDescriptors
-import org.jetbrains.kotlin.idea.refactoring.introduce.AbstractK1InplaceIntroduceFunctionTest
 import org.jetbrains.kotlin.idea.refactoring.introduce.AbstractK1ExtractionTest
+import org.jetbrains.kotlin.idea.refactoring.introduce.AbstractK1InplaceIntroduceFunctionTest
 import org.jetbrains.kotlin.idea.refactoring.move.AbstractK1MultiModuleMoveTest
 import org.jetbrains.kotlin.idea.refactoring.move.AbstractMoveTest
 import org.jetbrains.kotlin.idea.refactoring.pullUp.AbstractPullUpTest
@@ -379,12 +374,6 @@ private fun assembleWorkspace(): TWorkspace = workspace(KotlinPluginMode.K1) {
         }
     }
 
-    testGroup("coverage/tests") {
-        testClass<AbstractKotlinCoverageOutputFilesTest> {
-            model("outputFiles")
-        }
-    }
-
 
     testGroup("idea/tests") {
         testClass<AbstractAdditionalResolveDescriptorRendererTest> {
@@ -492,6 +481,8 @@ private fun assembleWorkspace(): TWorkspace = workspace(KotlinPluginMode.K1) {
                     "namedLambdaContextParameter",
                     "useWithIndex", // Intention-based inspection in K1, covered by the intention tests
                     "receiverShadowedByContextParameter",
+                    "destructingNameMismatch", // K2-only
+                    "removeRedundantCallsOfConversionMethods", // K2 compiler diagnostic
                 )
             )
         }
@@ -1293,20 +1284,6 @@ private fun assembleWorkspace(): TWorkspace = workspace(KotlinPluginMode.K1) {
         }
     }
 
-    testGroup("maven/tests") {
-        testClass<AbstractMavenConfigureProjectByChangingFileTest> {
-            model("configurator/jvm", pattern = DIRECTORY, isRecursive = false, testMethodName = "doTestWithMaven")
-        }
-
-        testClass<AbstractKotlinMavenInspectionTest> {
-            val mavenInspections = "maven-inspections"
-            val pattern = Patterns.forRegex("^([\\w\\-]+).xml$")
-            testDataRoot.resolve(mavenInspections).listFiles()!!.onEach { check(it.isDirectory) }.sorted().forEach {
-                model("$mavenInspections/${it.name}", pattern = pattern, flatten = true)
-            }
-        }
-    }
-
     testGroup("gradle/gradle-java/k1", testDataPath = "../../../idea/tests/testData", category = GRADLE) {
         testClass<AbstractGradleConfigureProjectByChangingFileTest> {
             model("configuration/gradle", pattern = DIRECTORY, isRecursive = false, testMethodName = "doTestGradle")
@@ -1339,6 +1316,7 @@ private fun assembleWorkspace(): TWorkspace = workspace(KotlinPluginMode.K1) {
                 "asJava/lightClasses/lightClassByFqName",
                 excludedDirectories = listOf(
                     "withTestCompilerPluginEnabled", // relevant only for K2
+                    "k2", // relevant only for K2
                 ),
                 pattern = KT_OR_KTS_WITHOUT_DOTS,
             )
@@ -1350,6 +1328,7 @@ private fun assembleWorkspace(): TWorkspace = workspace(KotlinPluginMode.K1) {
                 pattern = KT_OR_KTS_WITHOUT_DOTS,
                 excludedDirectories = listOf(
                     "jvmExposeBoxed", // K2 feature
+                    "k2", // relevant only for K2
                 )
             )
         }
@@ -1363,6 +1342,7 @@ private fun assembleWorkspace(): TWorkspace = workspace(KotlinPluginMode.K1) {
                     "ideRegression",
                     "script",
                     "withTestCompilerPluginEnabled", // relevant only for K2
+                    "k2", // relevant only for K2
                 ),
                 pattern = KT_OR_KTS_WITHOUT_DOTS,
             )
@@ -1459,7 +1439,7 @@ private fun assembleWorkspace(): TWorkspace = workspace(KotlinPluginMode.K1) {
             model("kdoc", pattern = KT_WITHOUT_DOT_AND_FIR_PREFIX)
         }
 
-        testClass<AbstractK1MLPerformanceCompletionTest>(commonSuite = false) {
+        testClass<AbstractK1MLPerformanceCompletionTest>(commonSuite = false, annotations = listOf(TAnnotation<PerformanceUnitTest>())) {
             model("basic/common", pattern = KT_WITHOUT_FIR_PREFIX)
             model("basic/java", pattern = KT_WITHOUT_FIR_PREFIX)
         }
@@ -1589,63 +1569,6 @@ private fun assembleWorkspace(): TWorkspace = workspace(KotlinPluginMode.K1) {
 
         testClass<AbstractFE1LegacyUastValuesTest> {
             model("")
-        }
-    }
-
-    testGroup("performance-tests", testDataPath = "../idea/tests/testData") {
-        testClass<AbstractPerformanceJavaToKotlinCopyPasteConversionTest>(commonSuite = false) {
-            model("copyPaste/conversion", testMethodName = "doPerfTest", pattern = Patterns.forRegex("""^([^.]+)\.java$"""))
-        }
-
-        testClass<AbstractPerformanceNewJavaToKotlinCopyPasteConversionTest>(commonSuite = false) {
-            model("copyPaste/conversion", testMethodName = "doPerfTest", pattern = Patterns.forRegex("""^([^.]+)\.java$"""))
-        }
-
-        testClass<AbstractPerformanceLiteralKotlinToKotlinCopyPasteTest>(commonSuite = false) {
-            model("copyPaste/literal", testMethodName = "doPerfTest", pattern = Patterns.forRegex("""^([^.]+)\.kt$"""))
-        }
-
-        testClass<AbstractPerformanceHighlightingTest>(commonSuite = false) {
-            model("highlighter", testMethodName = "doPerfTest")
-        }
-
-        testClass<AbstractPerformanceHighlightingStatNamesTest>(commonSuite = false) {
-            model("highlighter", testMethodName = "doPerfTest", pattern = Patterns.forRegex("""^(InvokeCall)\.kt$"""))
-        }
-
-        testClass<AbstractPerformanceAddImportTest>(commonSuite = false) {
-            model("addImport", testMethodName = "doPerfTest", pattern = KT_WITHOUT_DOTS)
-        }
-
-        testClass<AbstractPerformanceTypingIndentationTest>(commonSuite = false) {
-            model("editor/enterHandler", pattern = Patterns.forRegex("""^([^.]+)\.after\.kt.*$"""), testMethodName = "doNewlineTest", testClassName = "DirectSettings")
-            model("editor/enterHandler", pattern = Patterns.forRegex("""^([^.]+)\.after\.inv\.kt.*$"""), testMethodName = "doNewlineTestWithInvert", testClassName = "InvertedSettings")
-        }
-    }
-
-    testGroup("performance-tests", testDataPath = "../completion/testData") {
-        testClass<AbstractPerformanceCompletionIncrementalResolveTest>(commonSuite = false) {
-            model("incrementalResolve", testMethodName = "doPerfTest")
-        }
-
-        testClass<AbstractPerformanceBasicCompletionHandlerTest>(commonSuite = false) {
-            model("handlers/basic", testMethodName = "doPerfTest", pattern = KT_WITHOUT_DOTS)
-        }
-
-        testClass<AbstractPerformanceBasicCompletionHandlerStatNamesTest>(commonSuite = false) {
-            model("handlers/basic", testMethodName = "doPerfTest", pattern = Patterns.forRegex("""^(GetOperator)\.kt$"""))
-        }
-
-        testClass<AbstractPerformanceSmartCompletionHandlerTest>(commonSuite = false) {
-            model("handlers/smart", testMethodName = "doPerfTest")
-        }
-
-        testClass<AbstractPerformanceKeywordCompletionHandlerTest>(commonSuite = false) {
-            model("handlers/keywords", testMethodName = "doPerfTest")
-        }
-
-        testClass<AbstractPerformanceCompletionCharFilterTest>(commonSuite = false) {
-            model("handlers/charFilter", testMethodName = "doPerfTest", pattern = KT_WITHOUT_DOTS)
         }
     }
 

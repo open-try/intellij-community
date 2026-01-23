@@ -77,11 +77,11 @@ public final class JavaCompletionUtil {
     "expectedTypes",
     location -> {
       if (PsiJavaPatterns.psiElement().beforeLeaf(PsiJavaPatterns.psiElement().withText("."))
-        .accepts(location.getCompletionParameters().getPosition())) {
+        .accepts(location.getBaseCompletionParameters().getPosition())) {
         return ExpectedTypeInfo.EMPTY_ARRAY;
       }
 
-      return JavaSmartCompletionContributor.getExpectedTypes(location.getCompletionParameters());
+      return JavaSmartCompletionContributor.getExpectedTypes(location.getBaseCompletionParameters());
     });
 
   public static final Key<Boolean> SUPER_METHOD_PARAMETERS = Key.create("SUPER_METHOD_PARAMETERS");
@@ -750,7 +750,8 @@ public final class JavaCompletionUtil {
                                        @NotNull LookupElement item,
                                        boolean overloadsMatter,
                                        boolean hasParams) {
-    JavaFrontendCompletionUtil.insertParentheses(context, item, overloadsMatter, ThreeState.fromBoolean(hasParams), false);
+    var isVoidMethod = item.getObject() instanceof PsiMethod && PsiTypes.voidType().equals(((PsiMethod)item.getObject()).getReturnType());
+    JavaFrontendCompletionUtil.insertParentheses(context, item, overloadsMatter, ThreeState.fromBoolean(hasParams), false, isVoidMethod);
   }
 
   //need to shorten references in type argument list

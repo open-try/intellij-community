@@ -1,14 +1,18 @@
 // Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.polySymbols.html
 
-import com.intellij.documentation.mdn.*
+import com.intellij.documentation.mdn.MdnSymbolDocumentation
+import com.intellij.documentation.mdn.getDomEventDocumentation
+import com.intellij.model.Pointer
+import com.intellij.openapi.project.Project
+import com.intellij.polySymbols.PolySymbol
+import com.intellij.polySymbols.PolySymbolKind
+import com.intellij.polySymbols.PolySymbolModifier
+import com.intellij.polySymbols.PolySymbolQualifiedName
 import com.intellij.polySymbols.html.attributes.HtmlAttributeSymbolDescriptor
 import com.intellij.polySymbols.html.attributes.asHtmlSymbol
 import com.intellij.polySymbols.html.elements.HtmlElementSymbolDescriptor
 import com.intellij.polySymbols.html.elements.asHtmlSymbol
-import com.intellij.model.Pointer
-import com.intellij.openapi.project.Project
-import com.intellij.polySymbols.*
 import com.intellij.polySymbols.js.JS_EVENTS
 import com.intellij.polySymbols.query.*
 import com.intellij.polySymbols.utils.PolySymbolPrioritizedScope
@@ -40,8 +44,7 @@ class HtmlSymbolQueryScopeContributor : PolySymbolQueryScopeContributor {
   }
 
   @ApiStatus.Internal
-  class HtmlContextualSymbolScope(private val location: PsiElement)
-    : PolySymbolCompoundScope(), PolySymbolPrioritizedScope {
+  class HtmlContextualSymbolScope(private val location: PsiElement) : PolySymbolCompoundScope(), PolySymbolPrioritizedScope {
 
     init {
       assert(location !is XmlTag) { "Cannot create HtmlContextualPolySymbolsScope on a tag." }
@@ -115,12 +118,12 @@ class HtmlSymbolQueryScopeContributor : PolySymbolQueryScopeContributor {
     }
 
     override fun getSymbols(
-      qualifiedKind: PolySymbolQualifiedKind,
+      kind: PolySymbolKind,
       params: PolySymbolListSymbolsQueryParams,
       stack: PolySymbolQueryStack,
     ): List<PolySymbol> =
       if (params.queryExecutor.allowResolve) {
-        when (qualifiedKind) {
+        when (kind) {
           HTML_ELEMENTS ->
             (HtmlDescriptorUtils.getStandardHtmlElementDescriptor(tag)?.getElementsDescriptors(tag)
              ?: HtmlDescriptorUtils.getHtmlNSDescriptor(tag.project)?.getAllElementsDescriptors(null)
@@ -147,7 +150,7 @@ class HtmlSymbolQueryScopeContributor : PolySymbolQueryScopeContributor {
       stack: PolySymbolQueryStack,
     ): List<PolySymbol> {
       if (params.queryExecutor.allowResolve) {
-        when (qualifiedName.qualifiedKind) {
+        when (qualifiedName.kind) {
           HTML_ELEMENTS ->
             HtmlDescriptorUtils.getStandardHtmlElementDescriptor(tag, qualifiedName.name)
               ?.asHtmlSymbol(tag)
@@ -175,16 +178,16 @@ class HtmlSymbolQueryScopeContributor : PolySymbolQueryScopeContributor {
     override fun getMdnDocumentation(): MdnSymbolDocumentation? =
       getDomEventDocumentation(name)
 
+    override val source: PsiElement?
+      get() = null
+
     override val project: Project?
       get() = descriptor.declaration?.project
 
-    override val qualifiedKind: PolySymbolQualifiedKind
+    override val kind: PolySymbolKind
       get() = JS_EVENTS
 
     override val name: String = descriptor.name.substring(2)
-
-    override val origin: PolySymbolOrigin
-      get() = PolySymbolOrigin.empty()
 
     override val priority: PolySymbol.Priority
       get() = PolySymbol.Priority.LOW

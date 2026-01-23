@@ -22,8 +22,6 @@ import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
-private enum class ActionRequest { Restart, Pause }
-
 @Service(Service.Level.APP)
 internal class EditorCaretRepaintService(coroutineScope: CoroutineScope) {
   companion object {
@@ -55,12 +53,12 @@ internal class EditorCaretRepaintService(coroutineScope: CoroutineScope) {
   private val blinkPeriodRef = AtomicLong(500L)
 
   private val editorFlow = MutableStateFlow<EditorImpl?>(null)
-  private val actionRequests = MutableSharedFlow<ActionRequest>(replay = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+  private val actionRequests = MutableSharedFlow<Unit>(replay = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
 
   init {
     coroutineScope.launch(Dispatchers.UI + ModalityState.any().asContextElement()) {
-      editorFlow.combine(actionRequests, ::Pair).collectLatest { (editor, action) ->
-        if (editor != null && action == ActionRequest.Restart) {
+      editorFlow.combine(actionRequests, ) { editor, _ -> editor }.collectLatest { editor ->
+        if (editor != null) {
           runCatching {
             blink(editor)
           }.getOrHandleException { e ->
@@ -73,11 +71,7 @@ internal class EditorCaretRepaintService(coroutineScope: CoroutineScope) {
   }
 
   fun restart() {
-    check(actionRequests.tryEmit(ActionRequest.Restart))
-  }
-
-  fun pause() {
-    check(actionRequests.tryEmit(ActionRequest.Pause))
+    check(actionRequests.tryEmit(Unit))
   }
 
   private suspend fun blink(editor: EditorImpl) {
@@ -92,6 +86,8 @@ internal class EditorCaretRepaintService(coroutineScope: CoroutineScope) {
     while (true) {
       delay(blinkPeriod)
       val cursor = editor.myCaretCursor
+      cursor.blinkOpacity = 1.0f
+
       val time = System.currentTimeMillis() - cursor.startTime
       if (time > blinkPeriod) {
         var toRepaint = true
@@ -125,9 +121,19 @@ internal class EditorCaretRepaintService(coroutineScope: CoroutineScope) {
     var fadingOut = true
 
     while (true) {
+      delay(frameDuration.toLong())
+
       val cursor = editor.myCaretCursor
 
       val now = System.currentTimeMillis()
+      if (!isBlinking || now - cursor.startTime < blinkPeriod) {
+        cursor.setFullOpacity()
+        cursor.repaint()
+        phaseStart = now
+        fadingOut = true
+        continue
+      }
+
       val elapsed = now - phaseStart
       val opacity: Double = when {
         elapsed < phaseDuration -> {
@@ -143,11 +149,10 @@ internal class EditorCaretRepaintService(coroutineScope: CoroutineScope) {
           if (fadingOut) 1.0 else 0.0
         }
       }
-      cursor.isActive = true
+
+      cursor.isActive = opacity >= 1e-2
       cursor.blinkOpacity = opacity.toFloat()
       cursor.repaint()
-
-      delay(frameDuration.toLong())
     }
   }
 }

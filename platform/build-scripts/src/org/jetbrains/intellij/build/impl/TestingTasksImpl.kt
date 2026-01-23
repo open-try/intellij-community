@@ -515,7 +515,7 @@ internal class TestingTasksImpl(context: CompilationContext, private val options
       messages.info("Starting tests from groups '${testGroups}' from classpath of module '${mainModule}'")
     }
     if (options.bucketsCount > 1) {
-      messages.info("Tests from bucket ${options.bucketIndex} of ${options.bucketsCount} will be executed")
+      messages.info("Tests from bucket ${options.bucketIndex + 1} of ${options.bucketsCount} will be executed")
     }
     spanBuilder("test classpath and runtime info").use {
       withContext(Dispatchers.IO) {
@@ -1008,6 +1008,8 @@ internal class TestingTasksImpl(context: CompilationContext, private val options
         }
 
         if (options.isDedicatedTestRuntime == "class") {
+          var hasFailures = false
+
           suspend fun runOneClass(testClassName: String) {
             val exitCode = block("running test class '$testClassName'") {
               runJUnit5Engine(
@@ -1024,6 +1026,7 @@ internal class TestingTasksImpl(context: CompilationContext, private val options
               )
             }
             if (exitCode == NO_TESTS_ERROR) throw NoTestsFound()
+            if (exitCode != 0) hasFailures = true
           }
 
           if (testClassesJUnit5.isNotEmpty()) {
@@ -1038,8 +1041,14 @@ internal class TestingTasksImpl(context: CompilationContext, private val options
               runOneClass(s)
             }
           }
+
+          if (hasFailures) {
+            throw RuntimeException("Tests failed in dedicated runtime (class mode)")
+          }
         }
         else if (options.isDedicatedTestRuntime == "package") {
+          var hasFailures = false
+
           fun groupByPackages(tests: List<String>): Map<String, List<String>> {
             return tests.groupBy {
               val i = it.lastIndexOf('.')
@@ -1066,6 +1075,7 @@ internal class TestingTasksImpl(context: CompilationContext, private val options
               )
             }
             if (exitCode == NO_TESTS_ERROR) throw NoTestsFound()
+            if (exitCode != 0) hasFailures = true
           }
 
           if (testClassesJUnit5.isNotEmpty()) {
@@ -1086,6 +1096,10 @@ internal class TestingTasksImpl(context: CompilationContext, private val options
               runOnePackage(entry)
             }
           }
+
+          if (hasFailures) {
+            throw RuntimeException("Tests failed in dedicated runtime (package mode)")
+          }
         }
       }
       else {
@@ -1101,6 +1115,8 @@ internal class TestingTasksImpl(context: CompilationContext, private val options
         }
         var runJUnit5 = !options.shouldSkipJUnit5Tests
         var runJUnit34 = !options.shouldSkipJUnit34Tests
+        var lastExitCode5 = 0
+        var lastExitCode34 = 0
         for (attempt in 1..options.attemptCount) {
           if (!runJUnit5 && !runJUnit34) break
           val spanNameSuffix = if (options.attemptCount > 1) " (attempt $attempt)" else ""
@@ -1130,6 +1146,7 @@ internal class TestingTasksImpl(context: CompilationContext, private val options
           else {
             0
           }
+          if (runJUnit5) lastExitCode5 = exitCode5
 
           additionalProperties[PathManager.PROPERTY_LOG_PATH] = "$systemPath${File.separator}log${File.separator}junit3and4"
           val exitCode34: Int = if (runJUnit34) {
@@ -1151,6 +1168,7 @@ internal class TestingTasksImpl(context: CompilationContext, private val options
           else {
             0
           }
+          if (runJUnit34) lastExitCode34 = exitCode34
 
           if (exitCode5 == NO_TESTS_ERROR && exitCode34 == NO_TESTS_ERROR &&
               // only check on the first (full) attempt
@@ -1163,7 +1181,7 @@ internal class TestingTasksImpl(context: CompilationContext, private val options
           if (runJUnit5) {
             val failedClassesJUnit5 = failedClassesJUnit5List.let { if (Files.exists(it)) it.readLines() else emptyList() }
             if (failedClassesJUnit5.isNotEmpty()) {
-              messages.info("Will rerun JUnit 5 tests: $failedClassesJUnit5")
+              messages.warning("Will rerun JUnit 5 tests: $failedClassesJUnit5")
             }
             else {
               runJUnit5 = false
@@ -1173,11 +1191,24 @@ internal class TestingTasksImpl(context: CompilationContext, private val options
           if (runJUnit34) {
             val failedClassesJUnit34 = failedClassesJUnit34List.let { if (Files.exists(it)) it.readLines() else emptyList() }
             if (failedClassesJUnit34.isNotEmpty()) {
-              messages.info("Will rerun JUnit 3+4 tests: $failedClassesJUnit34")
+              messages.warning("Will rerun JUnit 3+4 tests: $failedClassesJUnit34")
             }
             else {
               runJUnit34 = false
             }
+          }
+        }
+
+        // Check if tests failed after all retry attempts are exhausted
+        val hadTestFailures = (lastExitCode5 != 0 && lastExitCode5 != NO_TESTS_ERROR) ||
+                              (lastExitCode34 != 0 && lastExitCode34 != NO_TESTS_ERROR)
+        // On TeamCity test failures themselves control the build status, no need to report them as additional errors
+        if (!TeamCityHelper.isUnderTeamCity) {
+          if (hadTestFailures) {
+            throw RuntimeException("Tests failed (JUnit5 exit code: $lastExitCode5, JUnit3+4 exit code: $lastExitCode34, $NO_TESTS_ERROR means no test for this test framework)")
+          }
+          else {
+            println("*** All tests passed ***")
           }
         }
       }
@@ -1296,6 +1327,15 @@ internal class TestingTasksImpl(context: CompilationContext, private val options
     args.add("-classpath")
     args.add(classpath.joinToString(separator = File.pathSeparator))
 
+    /*
+    TODO it's better to load byte buddy beforehand and prohibit dynamic agent loading
+    WARNING: A Java agent has been loaded dynamically (/var/folders/y2/wzcbjbb16rz5l119wsct9vwc0000gn/T/byteBuddyAgent3573542851707188859.jar)
+    WARNING: If a serviceability tool is in use, please run with -XX:+EnableDynamicAgentLoading to hide this warning
+    WARNING: If a serviceability tool is not in use, please run with -Djdk.instrument.traceUsage for more information
+    WARNING: Dynamic loading of agents will be disallowed by default in a future release
+     */
+    args.add("-XX:+EnableDynamicAgentLoading")
+
     if (modulePath != null) {
       args.add("--module-path")
       val mp = ArrayList<String>(modulePath)
@@ -1362,10 +1402,10 @@ internal class TestingTasksImpl(context: CompilationContext, private val options
     }
 }
 
-private fun appendJUnitStarter(path: MutableList<String>, context: CompilationContext) {
-  for (libName in listOf("JUnit5", "JUnit5Launcher", "JUnit5Vintage", "JUnit5Jupiter")) {
-    for (library in context.outputProvider.findLibraryRoots(libName)) {
-      path.add(library.pathString)
+private fun appendJUnitStarter(classPath: MutableList<String>, context: CompilationContext) {
+  for ((libName, moduleName) in arrayOf("JUnit5" to null, "JUnit5Launcher" to null, "JUnit5Vintage" to null, "JUnit5Jupiter" to null)) {
+    for (library in context.outputProvider.findLibraryRoots(libName, moduleName)) {
+      classPath.add(library.toString())
     }
   }
 }

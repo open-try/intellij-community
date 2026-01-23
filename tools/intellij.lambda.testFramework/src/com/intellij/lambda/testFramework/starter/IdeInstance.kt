@@ -2,10 +2,7 @@ package com.intellij.lambda.testFramework.starter
 
 import com.intellij.ide.starter.config.ConfigurationStorage
 import com.intellij.ide.starter.config.splitMode
-import com.intellij.ide.starter.coroutine.perClassSupervisorScope
-import com.intellij.ide.starter.coroutine.testSuiteSupervisorScope
 import com.intellij.ide.starter.ide.isRemDevContext
-import com.intellij.ide.starter.junit5.cancelSupervisorScope
 import com.intellij.ide.starter.runner.IDERunContext
 import com.intellij.ide.starter.runner.Starter
 import com.intellij.ide.starter.runner.events.IdeLaunchEvent
@@ -15,7 +12,6 @@ import com.intellij.lambda.testFramework.utils.IdeWithLambda
 import com.intellij.lambda.testFramework.utils.runIdeWithLambda
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.tools.ide.starter.bus.EventsBus
-import kotlinx.coroutines.runBlocking
 
 data class RunContext(var frontendContext: IDERunContext, var backendContext: IDERunContext? = null)
 
@@ -99,22 +95,10 @@ object IdeInstance {
     else {
       LOG.info("IDE wasn't started. Skipping stopping it.")
     }
-
-    cancelSupervisorScope(perClassSupervisorScope, "IDE was stopped/not running so cancelling it's scope as well")
   }
 
   fun publishArtifacts(): Unit = synchronized(this) {
     runContext.frontendContext.publishArtifacts(publish = true)
     runContext.backendContext?.publishArtifacts(publish = true)
-  }
-
-  internal fun cleanup(): Unit = synchronized(this) {
-    if (!isStarted()) return@synchronized
-    runCatching {
-      @Suppress("RAW_RUN_BLOCKING")
-      runBlocking(testSuiteSupervisorScope.coroutineContext) {
-        ide.cleanUp()
-      }
-    }.onFailure { LOG.error("Problems when cleaning up IDE: ${it.message}", it) }
   }
 }

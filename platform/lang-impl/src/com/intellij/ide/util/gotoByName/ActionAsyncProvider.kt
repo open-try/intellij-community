@@ -4,6 +4,7 @@ package com.intellij.ide.util.gotoByName
 import com.intellij.ide.SearchTopHitProvider
 import com.intellij.ide.actions.ApplyIntentionAction
 import com.intellij.ide.ui.OptionsSearchTopHitProvider
+import com.intellij.ide.ui.OptionsTopHitProvider
 import com.intellij.ide.ui.OptionsTopHitProvider.ProjectLevelProvidersAdapter
 import com.intellij.ide.ui.search.ActionFromOptionDescriptorProvider
 import com.intellij.ide.ui.search.OptionDescription
@@ -150,7 +151,15 @@ class ActionAsyncProvider(private val model: GotoActionModel) {
 
     val list = try {
       collectMatchedActions(pattern, allIds, weightMatcher, unmatchedIdsChannel)
-    } finally {
+    }
+    catch (e: Throwable) {
+      val t = Throwable(e)
+      if (LOG.isDebugEnabled && pattern == "Collect Host and Client Logs") {
+        LOG.warn("[$pattern] TEST DIAGNOSTICS: exception during collectMatchedActions: ${t.message}", t)
+      }
+      throw e
+    }
+    finally {
       unmatchedIdsChannel.close()
     }
 
@@ -247,18 +256,46 @@ class ActionAsyncProvider(private val model: GotoActionModel) {
 
       return@mapNotNull action
     }
+
+    if (LOG.isDebugEnabled) {
+      LOG.debug { "[$pattern] TEST DIAGNOSTICS: allIds contains \"CollectZippedLogs\": ${allIds.contains("CollectZippedLogs")}" }
+    }
+
     val extendedActions: Sequence<AnAction> = model.dataContext.getData(QuickActionProvider.KEY)?.getActions(true)?.asSequence() ?: emptySequence<AnAction>()
     val allActions: Sequence<AnAction> = mainActions + extendedActions + extendedActions.flatMap { (it as? ActionGroup)?.let { model.updateSession.children(it) } ?: emptyList() }
     val matchedActions = produce(capacity = Channel.UNLIMITED) {
+      val startAllTime = System.currentTimeMillis()
+
       allActions.forEach { action ->
+        val isCollectLogsAction = LOG.isDebugEnabled && action::class.java.simpleName.let {
+          it == "ClientCollectZippedLogsWithRemoteAction" || it == "CWMBackendCollectZippedLogsWithRemoteAction"
+        }
+
+        if (isCollectLogsAction) {
+           LOG.debug { "[$pattern] TEST DIAGNOSTICS: allActions contains Collect Logs action: ${action::class.java.simpleName}" }
+        }
+
         launch {
           runCatching {
+            val startOneTime = System.currentTimeMillis()
+            LOG.debug { "[$pattern] TEST DIAGNOSTICS: before model.actionMatches: ${action::class.java.simpleName}" }
             val mode = model.actionMatches(pattern, matcher, action)
+            val endTime = System.currentTimeMillis()
+            LOG.debug { "[$pattern] TEST DIAGNOSTICS: after model.actionMatches: ${action::class.java.simpleName} - (duration:${endTime - startOneTime} ms, totalDuration: ${endTime - startAllTime} ms)" }
+
             if (mode != MatchMode.NONE) {
+              if (isCollectLogsAction) {
+                LOG.debug("[$pattern] TEST DIAGNOSTICS: Collect Logs action matched")
+              }
+
               val weight = calcElementWeight(action, pattern, weightMatcher)
               send(MatchedAction(action, mode, weight))
             }
             else {
+              if (isCollectLogsAction) {
+                LOG.debug("[$pattern] TEST DIAGNOSTICS: Collect Logs action unmatched")
+              }
+
               if (action is ActionStubBase) actionManager.getId(action)?.let { unmatchedIdsChannel.send(it) }
             }
           }.onFailure { t ->
@@ -267,6 +304,9 @@ class ActionAsyncProvider(private val model: GotoActionModel) {
         }
       }
     }.toList()
+
+
+    LOG.debug { "[$pattern] TEST DIAGNOSTICS: matchedActions list is ready (${matchedActions.size})" }
 
     val comparator = Comparator.comparing<MatchedAction, Int> { it.weight ?: 0 }.reversed()
     return@coroutineScope matchedActions.sortedWith(comparator)
@@ -331,22 +371,29 @@ class ActionAsyncProvider(private val model: GotoActionModel) {
 
     for (provider in SearchTopHitProvider.EP_NAME.extensionList) {
       @Suppress("DEPRECATION")
-      if (provider is com.intellij.ide.ui.OptionsTopHitProvider.CoveredByToggleActions) {
+      if (provider is OptionsTopHitProvider.CoveredByToggleActions) {
         continue
       }
 
       if (provider is OptionsSearchTopHitProvider && !pattern.startsWith(commandAccelerator)) {
         val prefix = commandAccelerator + provider.getId() + " "
-        provider.consumeTopHits(pattern = prefix + pattern, collector = collector, project = project)
+        runCatching {
+          provider.consumeTopHits(pattern = prefix + pattern, collector = collector, project = project)
+        }.getOrLogException(LOG)
       }
       else if (project != null && provider is ProjectLevelProvidersAdapter) {
-        provider.consumeAllTopHits(
-          pattern = pattern,
-          collector = { collector.accept(it) },
-          project = project,
-        )
+        runCatching {
+          provider.consumeAllTopHits(
+            pattern = pattern,
+            collector = { collector.accept(it) },
+            project = project,
+          )
+        }.getOrLogException(LOG)
       }
-      provider.consumeTopHits(pattern, collector, project)
+
+      runCatching {
+        provider.consumeTopHits(pattern, collector, project)
+      }.getOrLogException(LOG)
     }
 
     val matchedValues = collector.result.mapConcurrent { item ->

@@ -45,6 +45,10 @@ public final class JUnit5TeamCityRunnerForTestsOnClasspath {
   }
 
   public static void main(String[] args) {
+    JUnit5TeamCityRunnerForTestAllSuite.TCExecutionListener listener = null;
+    Throwable caughtException = null;
+    boolean noTestsFound = false;
+
     try {
       Launcher launcher = LauncherFactory.create();
 
@@ -88,21 +92,38 @@ public final class JUnit5TeamCityRunnerForTestsOnClasspath {
           saveListOfTestClasses(testPlan);
           return;
         }
-        launcher.execute(testPlan, new JUnit5TeamCityRunnerForTestAllSuite.TCExecutionListener());
+        listener = new JUnit5TeamCityRunnerForTestAllSuite.TCExecutionListener();
+        launcher.execute(testPlan, listener);
       }
       else {
-        //see org.jetbrains.intellij.build.impl.TestingTasksImpl.NO_TESTS_ERROR
-        System.exit(42);
+        noTestsFound = true;
       }
     }
     catch (Throwable e) {
+      caughtException = e;
       assertNoUnhandledExceptions("JUnit5TeamCityRunnerForTestsOnClasspath", e);
-      System.exit(1);
     }
     finally {
       assertNoUnhandledExceptions("JUnit5TeamCityRunnerForTestsOnClasspath", null);
-      System.exit(0);
     }
+
+    // Determine exit code OUTSIDE of try/catch/finally to avoid finally overriding the exit code
+    int exitCode;
+    if (caughtException != null) {
+      exitCode = 1;
+    }
+    else if (noTestsFound || !listener.smthExecuted()) {
+      // see org.jetbrains.intellij.build.impl.TestingTasksImpl.NO_TESTS_ERROR
+      exitCode = 42;
+    }
+    else if (listener.hasFailures()) {
+      exitCode = 1;
+    }
+    else {
+      exitCode = 0;
+    }
+
+    System.exit(exitCode);
   }
 
   private static Set<Path> getClassPathRoots(ClassLoader classLoader) throws Throwable {
@@ -156,23 +177,23 @@ public final class JUnit5TeamCityRunnerForTestsOnClasspath {
     throws NoSuchMethodException, ClassNotFoundException, IllegalAccessException {
     MethodHandle included = MethodHandles.publicLookup()
       .findStatic(Class.forName("com.intellij.TestCaseLoader", true, classLoader),
-                  "isClassIncluded", MethodType.methodType(boolean.class, String.class));
+                  "isClassIncluded", MethodType.methodType(boolean.class, Class.class));
     return new PostDiscoveryFilter() {
       record LastCheckResult(String className, FilterResult result) {
       }
 
       private LastCheckResult myLastResult = null;
 
-      private FilterResult isIncluded(String className) {
-        if (myLastResult == null || !myLastResult.className.equals(className)) {
-          myLastResult = new LastCheckResult(className, isIncludedImpl(className));
+      private FilterResult isIncluded(Class<?> aClass) {
+        if (myLastResult == null || !myLastResult.className.equals(aClass.getName())) {
+          myLastResult = new LastCheckResult(aClass.getName(), isIncludedImpl(aClass));
         }
         return myLastResult.result;
       }
 
-      private FilterResult isIncludedImpl(String className) {
+      private FilterResult isIncludedImpl(Class<?> aClass) {
         try {
-          if ((boolean)included.invokeExact(className)) {
+          if ((boolean)included.invokeExact(aClass)) {
             return FilterResult.included(null);
           }
           return FilterResult.excluded(null);
@@ -192,10 +213,10 @@ public final class JUnit5TeamCityRunnerForTestsOnClasspath {
           return FilterResult.included("No source for descriptor");
         }
         if (source instanceof MethodSource methodSource) {
-          return isIncluded(methodSource.getClassName());
+          return isIncluded(methodSource.getJavaClass());
         }
         if (source instanceof ClassSource classSource) {
-          return isIncluded(classSource.getClassName());
+          return isIncluded(classSource.getJavaClass());
         }
         return FilterResult.included("Unknown source type " + source.getClass());
       }

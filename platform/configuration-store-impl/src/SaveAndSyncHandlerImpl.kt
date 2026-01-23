@@ -1,4 +1,4 @@
-// Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
+// Copyright 2000-2026 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.configurationStore
 
 import com.intellij.conversion.ConversionService
@@ -44,7 +44,7 @@ private val EP_NAME = ExtensionPointName<SaveAndSyncHandlerListener>("com.intell
 private val LISTEN_DELAY = 15.seconds
 
 @OptIn(FlowPreview::class)
-private class SaveAndSyncHandlerImpl(private val coroutineScope: CoroutineScope) : SaveAndSyncHandler() {
+internal class SaveAndSyncHandlerImpl(private val coroutineScope: CoroutineScope) : SaveAndSyncHandler() {
   private val refreshKnownLocalRootsRequests = MutableSharedFlow<Unit>(replay = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
   private val refreshOpenedFilesRequests = MutableSharedFlow<Unit>(replay = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
   private val saveRequests = MutableSharedFlow<Unit>(replay = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
@@ -466,17 +466,15 @@ private suspend fun doRefreshOpenedFiles(refreshQueue: RefreshQueue) {
     return
   }
 
-  withContext(Dispatchers.EDT) {
-    writeIntentReadAction {
-      val session = refreshQueue.createSession(
-        /* async = */ false,
-        /* recursive = */ false,
-        /* finishRunnable = */ null,
-        /* state = */ ModalityState.nonModal(),
-      )
-      session.addAllFiles(files)
-      session.launch()
-    }
+  backgroundWriteAction {
+    val session = refreshQueue.createSession(
+      /* async = */ false,
+      /* recursive = */ false,
+      /* finishRunnable = */ null,
+      /* state = */ ModalityState.nonModal(),
+    )
+    session.addAllFiles(files)
+    session.launch()
   }
 }
 

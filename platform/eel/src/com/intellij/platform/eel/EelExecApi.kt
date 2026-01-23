@@ -1,4 +1,4 @@
-// Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
+// Copyright 2000-2026 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.platform.eel
 
 import com.intellij.platform.eel.EelExecApi.ExecuteProcessOptions
@@ -136,9 +136,16 @@ sealed interface EelExecApi {
         }!!
         try {
           when {
-            expireAt <= now ->
-              return environmentVariables().loginInteractive().onlyActual(true).eelIt().await()
-
+            expireAt <= now -> {
+              val result = environmentVariables().loginInteractive().onlyActual(true).eelIt().await()
+              cacheForObsoleteEnvVarExpireAt.compute(descriptor) { _, expireAtAndSucceeded ->
+                if (expireAtAndSucceeded == expireAt to true)
+                  now + cacheDuration to true
+                else
+                  expireAtAndSucceeded
+              }
+              return result
+            }
             completedSuccessfullyLastTime ->
               return environmentVariables().loginInteractive().onlyActual(false).eelIt().await()
 
@@ -196,7 +203,13 @@ sealed interface EelExecApi {
   ) {
     @ApiStatus.Experimental
     @ThrowsChecked(EnvironmentVariablesException::class)
-    suspend fun await(): Map<String, String> = deferred.await()
+    suspend fun await(): Map<String, String> = try {
+      deferred.await()
+    }
+    catch (e: CancellationException) {
+      currentCoroutineContext().ensureActive()
+      throw RuntimeException("Environment variables fetching was cancelled", e)
+    }
   }
 
   interface EnvironmentVariablesOptions {

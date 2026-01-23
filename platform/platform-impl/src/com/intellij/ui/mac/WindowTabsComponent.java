@@ -6,7 +6,6 @@ import com.intellij.ide.IdeBundle;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.actionSystem.*;
 import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.application.impl.BorderPainterHolder;
 import com.intellij.openapi.application.impl.InternalUICustomization;
 import com.intellij.openapi.components.ComponentManagerEx;
 import com.intellij.openapi.project.DumbAwareAction;
@@ -59,7 +58,7 @@ import java.beans.PropertyChangeListener;
 import java.util.*;
 
 @ApiStatus.Internal
-public final class WindowTabsComponent extends JBTabsImpl implements BorderPainterHolder {
+public final class WindowTabsComponent extends JBTabsImpl {
   private static final String TITLE_LISTENER_KEY = "TitleListener";
   public static final String CLOSE_TAB_KEY = "CloseTab";
 
@@ -70,8 +69,6 @@ public final class WindowTabsComponent extends JBTabsImpl implements BorderPaint
   private final IdeFrameImpl myNativeWindow;
   private final Disposable myParentDisposable;
   private final Map<IdeFrameImpl, Integer> myIndexes = new HashMap<>();
-
-  private BorderPainter borderPainter = new DefaultBorderPainter();
 
   public WindowTabsComponent(@NotNull IdeFrameImpl nativeWindow, @Nullable Project project, @NotNull Disposable parentDisposable) {
     super(project, parentDisposable);
@@ -98,17 +95,9 @@ public final class WindowTabsComponent extends JBTabsImpl implements BorderPaint
     installDnD();
   }
 
-
-  @ApiStatus.Internal
   @Override
-  public @NotNull BorderPainter getBorderPainter() {
-    return borderPainter;
-  }
-
-  @ApiStatus.Internal
-  @Override
-  public void setBorderPainter(@NotNull BorderPainter painter) {
-    this.borderPainter = painter;
+  protected @NotNull Graphics getComponentGraphics(@NotNull Graphics graphics) {
+    return InternalUICustomization.runGlobalCGTransformWithInactiveFrameSupport(this, graphics);
   }
 
   private static @NotNull Insets getContentInsets() {
@@ -139,12 +128,6 @@ public final class WindowTabsComponent extends JBTabsImpl implements BorderPaint
   @Override
   public @NotNull Dimension getPreferredSize() {
     return new Dimension(super.getPreferredSize().width, JBUI.scale(TAB_HEIGHT));
-  }
-
-  @Override
-  public void paintChildren(Graphics g) {
-    super.paintChildren(g);
-    borderPainter.paintAfterChildren(this, g);
   }
 
   @Override

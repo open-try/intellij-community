@@ -17,10 +17,7 @@ import com.intellij.openapi.util.registry.Registry
 import com.intellij.openapi.vcs.FilePath
 import com.intellij.openapi.vcs.VcsConfiguration
 import com.intellij.openapi.vcs.changes.ChangesViewModifier.ChangesViewModifierListener
-import com.intellij.openapi.vcs.changes.ui.ChangesListView
-import com.intellij.openapi.vcs.changes.ui.ChangesTree
-import com.intellij.openapi.vcs.changes.ui.TreeModelBuilder
-import com.intellij.openapi.vcs.changes.ui.VcsTreeModelData
+import com.intellij.openapi.vcs.changes.ui.*
 import com.intellij.platform.diagnostic.telemetry.TelemetryManager
 import com.intellij.platform.diagnostic.telemetry.helpers.use
 import com.intellij.platform.ide.navigation.NavigationOptions
@@ -34,6 +31,7 @@ import com.intellij.platform.vcs.impl.shared.commit.CommitToolWindowViewModel
 import com.intellij.platform.vcs.impl.shared.commit.EditedCommitPresentation
 import com.intellij.platform.vcs.impl.shared.telemetry.ChangesView
 import com.intellij.platform.vcs.impl.shared.telemetry.VcsScope
+import com.intellij.ui.ClickListener
 import com.intellij.ui.ExpandableItemsHandler
 import com.intellij.util.EditSourceOnDoubleClickHandler
 import com.intellij.util.Processor
@@ -82,6 +80,8 @@ abstract class CommitChangesViewWithToolbarPanel(
 
   @RequiresEdt
   open fun initPanel() {
+    inputHandler.installListeners()
+
     cs.launch(Dispatchers.UI) {
       merge(
         ChangeListsViewModel.getInstance(project).changeListManagerState,
@@ -213,11 +213,15 @@ abstract class CommitChangesViewWithToolbarPanel(
   )
 }
 
-private class ChangesViewInputHandler(private val cs: CoroutineScope, private val changesView: ChangesListView) {
+private class ChangesViewInputHandler(
+  private val cs: CoroutineScope,
+  private val changesView: ChangesListView,
+) {
   val diffRequests: MutableSharedFlow<Pair<ChangesViewDiffAction, ClientId>> =
     MutableSharedFlow(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
 
-  init {
+  @RequiresEdt
+  fun installListeners() {
     changesView.doubleClickHandler = Processor { e: MouseEvent ->
       if (EditSourceOnDoubleClickHandler.isToggleEvent(changesView, e)) return@Processor false
       handleEnterOrDoubleClick(requestFocus = true)
@@ -225,18 +229,16 @@ private class ChangesViewInputHandler(private val cs: CoroutineScope, private va
     changesView.enterKeyHandler = Processor {
       handleEnterOrDoubleClick(requestFocus = false)
     }
-    changesView.addSelectionListener {
-      if (Registry.get("show.diff.preview.as.editor.tab.with.single.click").asBoolean() &&
-          VcsConfiguration.getInstance(changesView.project).LOCAL_CHANGES_DETAILS_PREVIEW_SHOWN) {
-        diffRequests.tryEmit(ChangesViewDiffAction.TRY_SHOW_PREVIEW to ClientId.current)
-      }
-    }
+
+    SingleClickDiffPreviewHandler(changesView) {
+      diffRequests.tryEmit(ChangesViewDiffAction.SINGLE_CLICK_DIFF_PREVIEW to ClientId.current)
+    }.install()
   }
 
   private fun handleEnterOrDoubleClick(requestFocus: Boolean): Boolean {
     if (!performHoverAction()) {
       val diffPreviewOnDoubleClickOrEnter = changesView.project.service<CommitToolWindowViewModel>().diffPreviewOnDoubleClickOrEnter
-      if (diffPreviewOnDoubleClickOrEnter) {
+      if (diffPreviewOnDoubleClickOrEnter && changesView.selectedDiffableNode != null) {
         diffRequests.tryEmit(ChangesViewDiffAction.PERFORM_DIFF to ClientId.current)
       }
       else {
@@ -258,5 +260,26 @@ private class ChangesViewInputHandler(private val cs: CoroutineScope, private va
       if (extension.handleDoubleClick(selected)) return true
     }
     return false
+  }
+
+  private class SingleClickDiffPreviewHandler(
+    private val changesView: ChangesListView,
+    private val previewDiff: () -> Unit,
+  ) : ClickListener() {
+    fun install() {
+      installOn(changesView)
+    }
+
+    override fun onClick(event: MouseEvent, clickCount: Int): Boolean {
+      val showDiff = clickCount == 1 &&
+                     event.button == MouseEvent.BUTTON1 &&
+                     Registry.get("show.diff.preview.as.editor.tab.with.single.click").asBoolean() &&
+                     VcsConfiguration.getInstance(changesView.project).LOCAL_CHANGES_DETAILS_PREVIEW_SHOWN &&
+                     !EditSourceOnDoubleClickHandler.isToggleEvent(changesView, event)
+      if (showDiff) {
+        previewDiff()
+      }
+      return showDiff
+    }
   }
 }

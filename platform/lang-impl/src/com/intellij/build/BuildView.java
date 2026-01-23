@@ -241,8 +241,21 @@ public class BuildView extends CompositeView<ExecutionConsole>
 
   @Nullable
   @ApiStatus.Internal
-  BuildTreeConsoleView getEventView() {
+  public BuildTreeConsoleView getEventView() {
     return getView(BuildTreeConsoleView.class.getName(), BuildTreeConsoleView.class);
+  }
+
+  // returns a non-null value after the view is initialized (after build start event is processed)
+  JComponent getConsoleComponent() {
+    BuildTreeConsoleView eventView = getEventView();
+    if (eventView != null) {
+      return eventView.getConsoleComponent();
+    }
+    ExecutionConsole console = getView(CONSOLE_VIEW_NAME);
+    if (console != null) {
+      return console.getComponent();
+    }
+    return null;
   }
 
   @Override

@@ -5,8 +5,10 @@ import com.intellij.platform.util.coroutines.attachAsChildTo
 import com.intellij.platform.util.coroutines.childScope
 import com.intellij.testFramework.junit5.TestApplication
 import kotlinx.coroutines.*
+import org.jetbrains.annotations.ApiStatus
 
-internal class TestFixtureImpl<T>(
+@ApiStatus.Internal
+class TestFixtureImpl<T>(
   private val debugString: String,
   initializer: TestFixtureInitializer<T>,
 ) : TestFixture<T> {
@@ -25,6 +27,7 @@ internal class TestFixtureImpl<T>(
         Fixture framework seems not be initialized. Make sure that:
         1. A test is written in Kotlin
         2. There is an annotation ${TestApplication::class.java.name} on top of your file. 
+        3. @Test annotation is imported from JUnit 5.
       """.trimIndent())
       @OptIn(ExperimentalCoroutinesApi::class)
       return deferred.getCompleted().first

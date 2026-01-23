@@ -8,7 +8,6 @@ import com.intellij.ide.ui.LafManagerListener
 import com.intellij.ide.ui.UISettings
 import com.intellij.ide.ui.UISettingsListener
 import com.intellij.openapi.application.ApplicationManager
-import com.intellij.openapi.application.impl.BorderPainterHolder
 import com.intellij.openapi.application.impl.InternalUICustomization
 import com.intellij.openapi.diagnostic.debug
 import com.intellij.openapi.diagnostic.logger
@@ -27,7 +26,10 @@ import com.intellij.openapi.wm.WindowInfo
 import com.intellij.openapi.wm.impl.*
 import com.intellij.openapi.wm.impl.ToolWindowManagerImpl.Companion.getAdjustedRatio
 import com.intellij.openapi.wm.impl.ToolWindowManagerImpl.Companion.getRegisteredMutableInfoOrLogError
-import com.intellij.ui.*
+import com.intellij.ui.ExperimentalUI
+import com.intellij.ui.JBColor
+import com.intellij.ui.OnePixelSplitter
+import com.intellij.ui.ScreenUtil
 import com.intellij.ui.awt.DevicePoint
 import com.intellij.ui.paint.PaintUtil
 import com.intellij.ui.scale.JBUIScale
@@ -63,7 +65,7 @@ class ToolWindowPane private constructor(
   frame: JFrame,
   val paneId: String,
   @field:JvmField internal val buttonManager: ToolWindowButtonManager,
-) : JLayeredPane(), UISettingsListener, BorderPainterHolder {
+) : JLayeredPane(), UISettingsListener {
   companion object {
     const val TEMPORARY_ADDED: String = "TEMPORARY_ADDED"
 
@@ -122,8 +124,6 @@ class ToolWindowPane private constructor(
   private var state = ToolWindowPaneState()
 
   internal val frame: JFrame
-
-  override var borderPainter: BorderPainter = DefaultBorderPainter()
 
   /**
    * This panel is the layered pane where all sliding tool windows are located. The DEFAULT
@@ -395,11 +395,6 @@ class ToolWindowPane private constructor(
       revalidate()
       repaint()
     }
-  }
-
-  override fun paintChildren(g: Graphics) {
-    super.paintChildren(g)
-    borderPainter.paintAfterChildren(this, g)
   }
 
   val bottomHeight: Int

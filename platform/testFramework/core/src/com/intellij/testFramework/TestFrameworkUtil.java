@@ -2,6 +2,7 @@
 package com.intellij.testFramework;
 
 import com.intellij.openapi.util.text.StringUtil;
+import com.intellij.util.containers.ContainerUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.annotations.TestOnly;
@@ -16,6 +17,8 @@ import java.awt.*;
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
+import java.util.List;
+import java.util.Objects;
 
 @SuppressWarnings("UseOfSystemOutOrSystemErr")
 public final class TestFrameworkUtil {
@@ -73,14 +76,32 @@ public final class TestFrameworkUtil {
     return false;
   }
 
-  public static boolean isPerformanceTest(@Nullable String testName, @Nullable String className) {
-    return containsWord(testName, className, "performance");
+  public static boolean isPerformanceTest(@Nullable String testName, @NotNull Class<?> aClass) {
+    if (aClass.isAnnotationPresent(PerformanceUnitTest.class)) {
+      return true;
+    }
+
+    if (testName != null) {
+      List<Method> methods = ContainerUtil.findAll(aClass.getMethods(), method -> method.getName().equals(testName));
+      if (methods.isEmpty()) {
+        return false;  // not supported, e.g. org.angular2.lang.html.Angular2HtmlLexerSpecTest#`HtmlLexer, line/column numbers, it should work without newlines`
+      }
+
+      if (ContainerUtil.all(methods, method -> method.isAnnotationPresent(PerformanceUnitTest.class))) {
+        return true;
+      }
+      else if (ContainerUtil.exists(methods, method -> method.isAnnotationPresent(PerformanceUnitTest.class))) {
+        throw new IllegalStateException("Overloaded methods with inconsistent @PerformanceUnitTest annotations are not supported: " + aClass.getName() + "#" + testName);  // not supported
+      }
+    }
+
+    return false;
   }
 
-  public static boolean isStressTest(@Nullable String testName, @Nullable String className) {
-    return isPerformanceTest(testName, className) ||
-           containsWord(testName, className, "stress") ||
-           containsWord(testName, className, "slow");
+  public static boolean isStressTest(@Nullable String testName, @NotNull Class<?> aClass) {
+    return isPerformanceTest(testName, aClass) ||
+           containsWord(testName, aClass.getSimpleName(), "stress") ||
+           containsWord(testName, aClass.getSimpleName(), "slow");
   }
 
   private static boolean containsWord(@Nullable String testName, @Nullable String className, @NotNull String word) {

@@ -17,7 +17,7 @@ import com.intellij.openapi.wm.impl.headertoolbar.MainToolbar
 import com.intellij.toolWindow.StripesUxCustomizer
 import com.intellij.toolWindow.ToolWindowButtonManager
 import com.intellij.toolWindow.xNext.XNextStripesUxCustomizer
-import com.intellij.ui.BorderPainter
+import com.intellij.ui.Graphics2DDelegate
 import com.intellij.ui.JBColor
 import com.intellij.ui.mac.WindowTabsComponent
 import com.intellij.ui.tabs.JBTabPainter
@@ -25,6 +25,7 @@ import com.intellij.ui.tabs.JBTabsPosition
 import com.intellij.ui.tabs.impl.JBTabsImpl
 import com.intellij.ui.tabs.impl.TabLabel
 import com.intellij.ui.tabs.impl.TabPainterAdapter
+import com.intellij.util.ui.JBSwingUtilities
 import com.intellij.util.ui.JBUI
 import org.jetbrains.annotations.ApiStatus
 import java.awt.*
@@ -50,6 +51,18 @@ open class InternalUICustomization {
       val result = serviceOrNull<InternalUICustomization>()
       instance = result
       return result
+    }
+
+    @JvmStatic
+    fun runGlobalCGTransformWithInactiveFrameSupport(component: JComponent, graphics: Graphics): Graphics {
+      if (graphics is Graphics2DDelegate) {
+        return graphics
+      }
+
+      val customization = getInstance()
+      val inactiveFrameGraphics = customization?.inactiveFrameGraphics(graphics, component) ?: graphics
+
+      return JBSwingUtilities.runGlobalCGTransform(component, inactiveFrameGraphics)
     }
   }
 
@@ -132,6 +145,8 @@ open class InternalUICustomization {
 
   open fun preserveGraphics(graphics: Graphics): Graphics = graphics
 
+  open fun inactiveFrameGraphics(graphics: Graphics, component: Component): Graphics = graphics
+
   open fun backgroundImageGraphics(component: JComponent, graphics: Graphics): Graphics = graphics
 
   open fun createCustomDivider(isVertical: Boolean, splitter: Splittable): Divider? = null
@@ -145,8 +160,6 @@ open class InternalUICustomization {
   open val isMacScrollBar: Boolean = false
 
   open fun attachIdeFrameBackgroundPainter(frame: IdeFrame, glassPane: IdeGlassPane): Unit = Unit
-
-  open fun paintFrameBackground(frame: IdeFrame, component: Component, g: Graphics2D) {}
 
   open fun updateBackgroundPainter() {}
 
@@ -194,9 +207,4 @@ open class InternalUICustomization {
   open fun getTabLayoutStart(layout: ContentLayout): Int = 0
 
   open fun getSingleRowTabInsets(tabsPosition: JBTabsPosition): Insets? = null
-}
-
-@ApiStatus.Internal
-interface BorderPainterHolder {
-  var borderPainter: BorderPainter
 }

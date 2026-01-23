@@ -766,6 +766,40 @@ public abstract class K2JsBasicCompletionLegacyStdlibTestGenerated extends Abstr
         }
 
         @RunWith(JUnit3RunnerWithInners.class)
+        @TestMetadata("../../completion/testData/basic/common/contextSensitiveResolution")
+        public static class ContextSensitiveResolution extends AbstractK2JsBasicCompletionLegacyStdlibTest {
+            @java.lang.Override
+            @org.jetbrains.annotations.NotNull
+            public final KotlinPluginMode getPluginMode() {
+                return KotlinPluginMode.K2;
+            }
+
+            private void runTest(String testDataFilePath) throws Exception {
+                KotlinTestUtils.runTest(this::doTest, this, testDataFilePath);
+            }
+
+            @TestMetadata("NoEnumValueIfDisabled.kt")
+            public void testNoEnumValueIfDisabled() throws Exception {
+                runTest("../../completion/testData/basic/common/contextSensitiveResolution/NoEnumValueIfDisabled.kt");
+            }
+
+            @TestMetadata("ShowQualifiedExtensionFunctions.kt")
+            public void testShowQualifiedExtensionFunctions() throws Exception {
+                runTest("../../completion/testData/basic/common/contextSensitiveResolution/ShowQualifiedExtensionFunctions.kt");
+            }
+
+            @TestMetadata("ShowQualifiedFields.kt")
+            public void testShowQualifiedFields() throws Exception {
+                runTest("../../completion/testData/basic/common/contextSensitiveResolution/ShowQualifiedFields.kt");
+            }
+
+            @TestMetadata("ShowQualifiedMethods.kt")
+            public void testShowQualifiedMethods() throws Exception {
+                runTest("../../completion/testData/basic/common/contextSensitiveResolution/ShowQualifiedMethods.kt");
+            }
+        }
+
+        @RunWith(JUnit3RunnerWithInners.class)
         @TestMetadata("../../completion/testData/basic/common/dslMarker")
         public static class DslMarker extends AbstractK2JsBasicCompletionLegacyStdlibTest {
             @java.lang.Override
@@ -3094,6 +3128,16 @@ public abstract class K2JsBasicCompletionLegacyStdlibTestGenerated extends Abstr
                 KotlinTestUtils.runTest(this::doTest, this, testDataFilePath);
             }
 
+            @TestMetadata("PreferExpectedTypeTypeAlias.kt")
+            public void testPreferExpectedTypeTypeAlias() throws Exception {
+                runTest("../../completion/testData/basic/common/typeAliasTypes/PreferExpectedTypeTypeAlias.kt");
+            }
+
+            @TestMetadata("PreferExpectedTypeTypeAliasReverse.kt")
+            public void testPreferExpectedTypeTypeAliasReverse() throws Exception {
+                runTest("../../completion/testData/basic/common/typeAliasTypes/PreferExpectedTypeTypeAliasReverse.kt");
+            }
+
             @TestMetadata("TypeAliasParameter.kt")
             public void testTypeAliasParameter() throws Exception {
                 runTest("../../completion/testData/basic/common/typeAliasTypes/TypeAliasParameter.kt");
@@ -3980,6 +4024,11 @@ public abstract class K2JsBasicCompletionLegacyStdlibTestGenerated extends Abstr
             @TestMetadata("PreferExceptionsInCatch.kt")
             public void testPreferExceptionsInCatch() throws Exception {
                 runTest("../../completion/testData/basic/common/PreferExceptionsInCatch.kt");
+            }
+
+            @TestMetadata("PreferExceptionsInThrow.kt")
+            public void testPreferExceptionsInThrow() throws Exception {
+                runTest("../../completion/testData/basic/common/PreferExceptionsInThrow.kt");
             }
 
             @TestMetadata("PreferLessParameters.kt")

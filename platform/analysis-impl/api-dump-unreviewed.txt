@@ -161,7 +161,6 @@ c:com.intellij.codeInsight.completion.BaseCompletionService
 - <init>():V
 - p:addWeighersBefore(com.intellij.codeInsight.completion.impl.CompletionSorterImpl):com.intellij.codeInsight.completion.impl.CompletionSorterImpl
 - p:createMatcher(java.lang.String,Z):com.intellij.codeInsight.completion.PrefixMatcher
-- defaultSorter(com.intellij.codeInsight.completion.CompletionParameters,com.intellij.codeInsight.completion.PrefixMatcher):com.intellij.codeInsight.completion.CompletionSorter
 - emptySorter():com.intellij.codeInsight.completion.impl.CompletionSorterImpl
 - getCurrentCompletion():com.intellij.codeInsight.completion.CompletionProcess
 - performCompletion(com.intellij.codeInsight.completion.CompletionParameters,com.intellij.util.Consumer):V
@@ -306,7 +305,6 @@ f:com.intellij.codeInsight.completion.OffsetsInFile
 - f:copyWithReplacement(I,I,java.lang.String):com.intellij.codeInsight.completion.OffsetsInFile
 - f:getFile():com.intellij.psi.PsiFile
 - f:getOffsets():com.intellij.codeInsight.completion.OffsetMap
-- f:replaceInCopy(com.intellij.psi.PsiFile,I,I,java.lang.String):java.util.function.Supplier
 - f:toInjectedIfAny(I):com.intellij.codeInsight.completion.OffsetsInFile
 - f:toTopLevelFile():com.intellij.codeInsight.completion.OffsetsInFile
 c:com.intellij.codeInsight.completion.PriorityWeigher
@@ -337,8 +335,6 @@ c:com.intellij.codeInsight.completion.impl.CamelHumpMatcher
 - isStartMatch(com.intellij.codeInsight.lookup.LookupElement):Z
 - isStartMatch(java.lang.String):Z
 - matchingDegree(java.lang.String):I
-- matchingDegree(java.lang.String,com.intellij.util.containers.FList):I
-- matchingFragments(java.lang.String):com.intellij.util.containers.FList
 - prefixMatches(com.intellij.codeInsight.lookup.LookupElement):Z
 - prefixMatches(java.lang.String):Z
 f:com.intellij.codeInsight.completion.impl.CompletionSorterImpl

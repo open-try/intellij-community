@@ -1,14 +1,12 @@
-// Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
+// Copyright 2000-2026 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.openapi.application.impl
 
-import com.intellij.ide.IdeEventQueue
 import com.intellij.openapi.application.*
 import com.intellij.openapi.application.ex.ApplicationManagerEx
 import com.intellij.openapi.progress.runBlockingMaybeCancellable
 import com.intellij.platform.ide.progress.ModalTaskOwner
 import com.intellij.platform.ide.progress.runWithModalProgressBlocking
 import com.intellij.testFramework.LeakHunter
-import com.intellij.testFramework.assertErrorLogged
 import com.intellij.testFramework.common.timeoutRunBlocking
 import com.intellij.testFramework.junit5.TestApplication
 import com.intellij.util.application
@@ -383,8 +381,8 @@ class EdtCoroutineDispatcherTest {
         }
       }
       finally {
-        assertThat(application.isReadAccessAllowed).isEqualTo(!useNonBlockingFlushQueue)
-        assertThat(application.isWriteIntentLockAcquired).isEqualTo(!useNonBlockingFlushQueue)
+        assertThat(application.isReadAccessAllowed).isFalse
+        assertThat(application.isWriteIntentLockAcquired).isFalse
         assertThat(application.isWriteAccessAllowed).isFalse
       }
     }
@@ -506,31 +504,7 @@ class EdtCoroutineDispatcherTest {
   }
 
   @Test
-  fun `exception messages in preventive locking for Dispatchers UI`(): Unit = timeoutRunBlocking {
-    withContext(Dispatchers.UI) {
-      IdeEventQueue.getInstance().threadingSupport.runPreventiveWriteIntentReadAction {
-        val error = assertErrorLogged<RuntimeException> {
-          ThreadingAssertions.assertReadAccess()
-        }
-        assertThat(error.message)
-          .contains("read access")
-          .contains("Dispatchers.UI")
-          .doesNotContain("Dispatchers.Main")
-
-        val error2 = assertErrorLogged<RuntimeException> {
-          ThreadingAssertions.assertWriteIntentReadAccess()
-        }
-        assertThat(error2.message)
-          .contains("write-intent access")
-          .contains("Dispatchers.UI")
-          .doesNotContain("Dispatchers.Main")
-      }
-    }
-  }
-
-  @Test
   fun `UI coroutine can be executed earlier then EDT coroutine`(): Unit = timeoutRunBlocking {
-    Assumptions.assumeTrue { useNonBlockingFlushQueue }
     val uiExecuted = AtomicBoolean()
     val edtExecuted = AtomicBoolean()
     backgroundWriteAction {

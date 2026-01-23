@@ -1,7 +1,6 @@
 // Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.codeInsight.lookup.impl
 
-import com.intellij.codeInsight.completion.PrefixMatcher
 import com.intellij.codeInsight.lookup.*
 import com.intellij.codeInsight.lookup.LookupElementPresentation.DecoratedTextRange
 import com.intellij.codeInsight.lookup.LookupElementPresentation.LookupItemDecoration
@@ -38,6 +37,7 @@ import com.intellij.util.IconUtil.cropIcon
 import com.intellij.util.ObjectUtils
 import com.intellij.util.containers.ContainerUtil
 import com.intellij.util.containers.FList
+import com.intellij.util.text.matching.MatchedFragment
 import com.intellij.util.ui.EmptyIcon
 import com.intellij.util.ui.JBInsets
 import com.intellij.util.ui.JBUI
@@ -197,6 +197,12 @@ class LookupCellRenderer(lookup: LookupImpl, editorComponent: JComponent) : List
     @JvmStatic
     fun getGrayedForeground(@Suppress("UNUSED_PARAMETER") isSelected: Boolean): Color = UIUtil.getContextHelpForeground()
 
+    @JvmStatic
+    fun getMatchingFragmentList(prefix: String, name: String): List<MatchedFragment>? {
+      return NameUtil.buildMatcher("*$prefix").build().match(name)
+    }
+
+    @Deprecated("use getMatchingFragmentList(prefix, name)", ReplaceWith("getMatchingFragmentList(prefix, name)"))
     @JvmStatic
     fun getMatchingFragments(prefix: String, name: String): FList<TextRange>? {
       return NameUtil.buildMatcher("*$prefix").build().matchingFragments(name)
@@ -464,18 +470,19 @@ class LookupCellRenderer(lookup: LookupImpl, editorComponent: JComponent) : List
     val prefix = if (item is EmptyLookupItem) "" else lookup.itemPattern(item)
     if (prefix.isNotEmpty()) {
       val itemMatcher = lookup.itemMatcher(item)
-      var ranges: List<TextRange>? = itemMatcher.getMatchingFragments(name) ?: getMatchingFragments(prefix, name)
+      var ranges: List<MatchedFragment>? = itemMatcher.getMatchingFragments(prefix, name) ?: getMatchingFragmentList(prefix, name)
       if (ranges == null) {
         val startIndex = item.lookupString.indexOf(name)
         if (startIndex != -1) {
-          ranges = getMatchingFragments(prefix, item.lookupString)
-            ?.map { TextRange((it.startOffset - startIndex).coerceIn(0, name.length), (it.endOffset - startIndex).coerceIn(0, name.length)) }
+          ranges = getMatchingFragmentList(prefix, item.lookupString)
+            ?.map { MatchedFragment((it.startOffset - startIndex).coerceIn(0, name.length), (it.endOffset - startIndex).coerceIn(0, name.length)) }
             ?.filter { it.length != 0 }
         }
       }
-      if (ranges != null && ranges.isNotEmpty()) {
+      if (!ranges.isNullOrEmpty()) {
+        val colored = ranges.map { TextRange.create(it.startOffset, it.endOffset) }
         val highlighted = SimpleTextAttributes(style, MATCHED_FOREGROUND_COLOR)
-        SpeedSearchUtil.appendColoredFragments(nameComponent, name, ranges, base, highlighted)
+        SpeedSearchUtil.appendColoredFragments(nameComponent, name, colored, base, highlighted)
         renderItemNameDecoration(nameComponent, itemNameDecorations)
         return
       }

@@ -85,11 +85,6 @@ public class PyFunctionTypeImpl implements PyFunctionType {
   }
 
   @Override
-  public String getName() {
-    return "function";
-  }
-
-  @Override
   public boolean isBuiltin() {
     return false;
   }
@@ -111,6 +106,11 @@ public class PyFunctionTypeImpl implements PyFunctionType {
       return new PyFunctionTypeImpl(myCallable, ContainerUtil.subList(parameters, 1));
     }
     return this;
+  }
+
+  @Override
+  public String toString() {
+    return "PyFunctionType: " + getName();
   }
 
   @Override

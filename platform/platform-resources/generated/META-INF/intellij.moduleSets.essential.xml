@@ -93,6 +93,8 @@
     <module name="fleet.reporting.api" loading="embedded"/>
     <module name="fleet.reporting.shared" loading="embedded"/>
     <module name="fleet.rhizomedb" loading="embedded"/>
+    <module name="fleet.rhizomedb.transactor" loading="embedded"/>
+    <module name="fleet.rhizomedb.transactor.rebase" loading="embedded"/>
     <module name="fleet.rpc" loading="embedded"/>
     <module name="fleet.util.codepoints" loading="embedded"/>
     <module name="fleet.util.core" loading="embedded"/>
@@ -246,6 +248,8 @@
     <module name="intellij.platform.editor.frontend"/>
     <module name="intellij.platform.managed.cache" loading="embedded"/>
     <module name="intellij.platform.managed.cache.backend"/>
+    <module name="intellij.platform.todo"/>
+    <module name="intellij.platform.todo.backend"/>
     <module name="intellij.platform.bookmarks.backend"/>
     <module name="intellij.platform.bookmarks.frontend"/>
     <module name="intellij.platform.pluginManager.shared"/>

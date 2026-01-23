@@ -4,6 +4,7 @@ package org.jetbrains.kotlin.idea.base.fir.projectStructure
 import org.jetbrains.kotlin.analysis.api.projectStructure.*
 import org.jetbrains.kotlin.analysis.utils.printer.PrettyPrinter
 import org.jetbrains.kotlin.analysis.utils.printer.prettyPrint
+import org.jetbrains.kotlin.idea.base.projectStructure.modules.KaLibraryFallbackDependenciesModuleImpl
 import org.jetbrains.kotlin.idea.base.projectStructure.sourceModuleKind
 
 object KaModuleStructureTxtRenderer {
@@ -52,6 +53,7 @@ object KaModuleStructureTxtRenderer {
                 appendLine("sourceModuleKind: ${module.sourceModuleKind}")
                 appendLine("stableModuleName: ${module.stableModuleName}")
             }
+            is KaLibraryFallbackDependenciesModule -> {}
 
             else -> error("Unknown module type: ${module::class.java}")
         }
@@ -65,7 +67,7 @@ object KaModuleStructureTxtRenderer {
                 if (dependencies.isEmpty()) {
                     appendLine("<empty>")
                 } else {
-                    dependencies.map { "${it.getKaModuleClass()}(${it.getOneLineModuleDescriptionForRendering()})" }
+                    dependencies.map { "${it.getKaModuleClass()}(${getOneLineModuleDescriptionForRendering(it)})" }
                         .sorted() // todo the order is unstable for moduleinfo-based impl, should be fixed as a part of KTIJ-31422
                         .forEach { appendLine(it) }
                 }

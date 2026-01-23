@@ -168,11 +168,9 @@
     <colorAndFontDescriptorProvider implementation="com.intellij.openapi.vcs.actions.VcsColorsPageFactory"/>
 
     <projectService serviceInterface="com.intellij.openapi.vcs.changes.ChangesViewI"
-                    serviceImplementation="com.intellij.openapi.vcs.changes.ChangesViewManager"
-                    testServiceImplementation="com.intellij.openapi.vcs.changes.DummyChangesView"/>
+                    serviceImplementation="com.intellij.openapi.vcs.changes.ChangesViewManager"/>
     <projectService serviceInterface="com.intellij.openapi.vcs.changes.ui.ChangesViewContentI"
-                    serviceImplementation="com.intellij.openapi.vcs.changes.ui.ChangesViewContentManager"
-                    testServiceImplementation="com.intellij.openapi.vcs.changes.ui.DummyChangesViewContentManager"/>
+                    serviceImplementation="com.intellij.openapi.vcs.changes.ui.ChangesViewContentManager"/>
 
     <toolWindow id="Commit" anchor="left" icon="AllIcons.Toolwindows.ToolWindowCommit"
                 factoryClass="com.intellij.openapi.vcs.changes.ui.CommitToolWindowFactory"/>
@@ -271,7 +269,7 @@
     <projectService serviceInterface="com.intellij.openapi.vcs.impl.LineStatusTrackerManagerI"
                     serviceImplementation="com.intellij.openapi.vcs.impl.LineStatusTrackerManager"/>
     <checkinHandlerFactory implementation="com.intellij.openapi.vcs.impl.LineStatusTrackerManager$CheckinFactory"/>
-    <projectService serviceInterface="com.intellij.openapi.vcs.impl.ActiveChangeListTracker"
+    <projectService serviceInterface="com.intellij.openapi.vcs.impl.ActiveChangeListTracker" open="true"
                     serviceImplementation="com.intellij.openapi.vcs.impl.ActiveChangeListTrackerImpl"/>
     <gutterMarkPreprocessor implementation="com.intellij.openapi.vcs.ex.ClientIdGutterIconMerge"/>
 
@@ -311,7 +309,7 @@
     <notificationGroup id="Vcs Notifications" displayType="BALLOON" bundle="messages.VcsBundle" key="notification.group.vcs.notifications"/>
     <notificationGroup id="Vcs Silent Notifications" displayType="NONE" bundle="messages.VcsBundle" key="notification.group.vcs.silent.notifications"/>
 
-    <projectService serviceInterface="com.intellij.openapi.vcs.impl.DefaultVcsRootPolicy"
+    <projectService serviceInterface="com.intellij.openapi.vcs.impl.DefaultVcsRootPolicy" open="true"
                     serviceImplementation="com.intellij.openapi.vcs.impl.ModuleDefaultVcsRootPolicy"/>
 
     <vcsStartupActivity implementation="com.intellij.openapi.vcs.impl.ModuleVcsDetector$ModuleVcsDetectorStartUpActivity"/>
@@ -421,8 +419,6 @@
               topic="com.intellij.openapi.vcs.changes.shelf.ShelveChangesManagerListener"/>
     <listener class="com.intellij.openapi.vcs.actions.AnnotationsLineStatusTrackerListener"
               topic="com.intellij.openapi.vcs.impl.LineStatusTrackerManager$Listener"/>
-    <listener class="com.intellij.vcs.commit.ChangesViewToolWindowRefresher"
-              topic="com.intellij.openapi.wm.ex.ToolWindowManagerListener"/>
   </projectListeners>
 </idea-plugin>
 

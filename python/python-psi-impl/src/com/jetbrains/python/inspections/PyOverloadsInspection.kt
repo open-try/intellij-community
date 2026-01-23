@@ -18,7 +18,7 @@ import com.jetbrains.python.psi.impl.PyClassImpl
 import com.jetbrains.python.psi.types.TypeEvalContext
 import com.jetbrains.python.pyi.PyiFile
 import com.jetbrains.python.pyi.PyiUtil
-import java.util.EnumSet
+import java.util.*
 
 class PyOverloadsInspection : PyInspection() {
 
@@ -66,7 +66,7 @@ class PyOverloadsInspection : PyInspection() {
         requiresImplementation = false
       }
       else if (owner is PyClass) {
-        if (isProtocol(owner, myTypeEvalContext)) {
+        if (owner.isProtocol(myTypeEvalContext)) {
           requiresImplementation = false
         }
         else {
@@ -86,9 +86,9 @@ class PyOverloadsInspection : PyInspection() {
       }
 
       if (implementation != null) {
-        functions
+        overloads
           .asSequence()
-          .filter { isIncompatibleOverload(implementation, it) }
+          .filter { !PyUtil.isSignatureCompatibleTo(implementation, it, myTypeEvalContext) }
           .forEach {
             registerProblem(it.nameIdentifier,
                             PyPsiBundle.message("INSP.overloads.this.overload.signature.not.compatible.with.implementation",
@@ -144,12 +144,6 @@ class PyOverloadsInspection : PyInspection() {
           it == PyKnownDecorator.TYPING_OVERRIDE || it == PyKnownDecorator.TYPING_EXTENSIONS_OVERRIDE
         }
       }
-    }
-
-    private fun isIncompatibleOverload(implementation: PyFunction, overload: PyFunction): Boolean {
-      return implementation != overload &&
-             PyiUtil.isOverload(overload, myTypeEvalContext) &&
-             !PyUtil.isSignatureCompatibleTo(implementation, overload, myTypeEvalContext)
     }
   }
 

@@ -22,20 +22,26 @@ import com.intellij.ui.scale.ScaleContext
 import com.intellij.util.ui.JBUI
 import java.awt.*
 import javax.swing.JComponent
+import javax.swing.SwingUtilities
+
+/**
+ * The list of auto replaced colors. Should contain only very specific colors, don't add widely used like `Panel.background`
+ */
+private val islandsGradientColors = setOf(
+  // Root components
+  "MainWindow.background",
+  "MainToolbar.background",
+  "MainToolbar.inactiveBackground",
+  "ToolWindow.Stripe.background",
+  "StatusBar.background",
+)
+
+internal fun isIslandsGradientColor(paint: Paint?): Boolean {
+  val colorName = (paint as? JBColor)?.name ?: return false
+  return colorName in islandsGradientColors
+}
 
 internal class IslandsGradientPainter(private val frame: IdeFrame, private val mainColor: Color, private val enabled: () -> Boolean) : AbstractPainter() {
-
-  /**
-   * The list of auto replaced colors. Should contain only very specific colors, don't add widely used like `Panel.background`
-   */
-  private val islandsGradientColors = setOf(
-    // Root components
-    "MainWindow.background",
-    "MainToolbar.background",
-    "MainToolbar.inactiveBackground",
-    "ToolWindow.Stripe.background",
-    "StatusBar.background",
-    )
 
   private val projectWindowCustomizer = ProjectWindowCustomizerService.getInstance()
 
@@ -48,8 +54,7 @@ internal class IslandsGradientPainter(private val frame: IdeFrame, private val m
       try {
         doPaint = false
 
-        val colorName = (g.paint as? JBColor)?.name
-        if (colorName in islandsGradientColors) {
+        if (isIslandsGradientColor(g.paint)) {
           islandsGradientPaint(frame, mainColor, projectWindowCustomizer, component, g)
         }
       }
@@ -74,18 +79,13 @@ internal fun islandsGradientPaint(frame: IdeFrame, mainColor: Color, projectWind
     doColorGradientPaint(project, projectWindowCustomizer, component, g)
   }
   else {
-    doGradientPaint(frame, mainColor, project, projectWindowCustomizer, g)
+    doGradientPaint(frame, mainColor, project, projectWindowCustomizer, component, g)
   }
 }
 
-private fun doGradientPaint(frame: IdeFrame, mainColor: Color, project: Project, projectWindowCustomizer: ProjectWindowCustomizerService, g: Graphics2D) {
-  val cache = getGradientCache(frame.component, "GradientCache")
-
-  val centerColor = projectWindowCustomizer.getGradientProjectColor(project)
-
+private fun doGradientPaint(frame: IdeFrame, mainColor: Color, project: Project, projectWindowCustomizer: ProjectWindowCustomizerService,
+                            component: Component, g: Graphics2D) {
   val centerX = project.service<ProjectWidgetGradientLocationService>().gradientOffsetRelativeToRootPane
-
-  val blendedColor = cache.getBlendedColor(mainColor, centerColor)
 
   val ctx = ScaleContext.create(g)
 
@@ -96,24 +96,58 @@ private fun doGradientPaint(frame: IdeFrame, mainColor: Color, project: Project,
   val rightWidth = alignIntToInt(length, ctx, PaintUtil.RoundingMode.CEIL, null)
   val totalWidth = alignIntToInt(leftWidth + rightWidth, ctx, PaintUtil.RoundingMode.CEIL, null)
 
+  val fullBounds = Rectangle(totalWidth, height)
+  val bounds = g.clipBounds?.intersection(fullBounds) ?: fullBounds
+  if (bounds.isEmpty) {
+    return
+  }
+
+  val cache = getGradientCache(frame.component, "GradientCache")
+  val centerColor = projectWindowCustomizer.getGradientProjectColor(project)
+  val blendedColor = cache.getBlendedColor(mainColor, centerColor)
+
   val leftGradientTexture = cache.left.getHorizontalTexture(g, leftWidth, mainColor, blendedColor)
   val rightGradientTexture = cache.right.getHorizontalTexture(g, rightWidth, blendedColor, mainColor, leftWidth)
+  val initialComposite = g.composite
+  val islandsInactiveFrameGraphics2D = g as? IslandsInactiveFrameGraphics2D
+
+  if (SwingUtilities.getWindowAncestor(frame.component)?.isActive == false) {
+    islandsInactiveFrameGraphics2D?.preserveComposite = true
+
+    val componentFullBounds = Rectangle(component.width, component.height)
+    val componentBounds = g.clipBounds?.intersection(componentFullBounds) ?: componentFullBounds
+    if (!componentBounds.isEmpty) {
+      g.color = mainColor
+      g.fillRect(componentBounds.x, componentBounds.y, componentBounds.width, componentBounds.height)
+    }
+
+    g.composite = AlphaComposite.getInstance(AlphaComposite.SRC_OVER, islandsInactiveAlpha)
+  }
 
   g.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY)
 
   alignTxToInt(g, null, true, false, PaintUtil.RoundingMode.FLOOR)
 
-  g.paint = leftGradientTexture
-  g.fillRect(0, 0, leftWidth, height)
+  val leftBounds = bounds.intersection(Rectangle(leftWidth, height))
+  if (!leftBounds.isEmpty) {
+    g.paint = leftGradientTexture
+    g.fillRect(leftBounds.x, leftBounds.y, leftBounds.width, leftBounds.height)
+  }
 
-  g.paint = rightGradientTexture
-  g.fillRect(leftWidth, 0, rightWidth, height)
+  val rightBounds = bounds.intersection(Rectangle(leftWidth, 0, rightWidth, height))
+  if (!rightBounds.isEmpty) {
+    g.paint = rightGradientTexture
+    g.fillRect(rightBounds.x, rightBounds.y, rightBounds.width, rightBounds.height)
+  }
 
   alignTxToInt(g, null, false, true, PaintUtil.RoundingMode.FLOOR)
 
   val startColor = if (SystemInfo.isMac) Gray.TRANSPARENT else ColorUtil.toAlpha(mainColor, 0)
   g.paint = GradientPaint(0f, 0f, startColor, 0f, height.toFloat(), mainColor)
-  g.fillRect(0, 0, totalWidth, height)
+  g.fillRect(bounds.x, bounds.y, bounds.width, bounds.height)
+
+  g.composite = initialComposite
+  islandsInactiveFrameGraphics2D?.preserveComposite = false
 }
 
 private class GradientCache {
@@ -146,7 +180,15 @@ private fun getGradientCache(root: JComponent, key: String): GradientCache {
 }
 
 private fun doColorGradientPaint(project: Project, projectWindowCustomizer: ProjectWindowCustomizerService, component: Component, g: Graphics2D) {
+  val islandsInactiveFrameGraphics2D = g as? IslandsInactiveFrameGraphics2D
+  val initialComposite = g.composite
   val info = projectWindowCustomizer.getProjectGradients(project)
+
+  if (SwingUtilities.getWindowAncestor(component)?.isActive == false) {
+    islandsInactiveFrameGraphics2D?.preserveComposite = true
+
+    g.composite = AlphaComposite.getInstance(AlphaComposite.SRC_OVER, islandsInactiveAlpha)
+  }
 
   g.paint = LinearGradientPaint(0f, 0f, component.width.toFloat(), component.height.toFloat(),
                                 floatArrayOf(info.getDiagonalFraction1(0f), info.getDiagonalFraction2(0.13f),
@@ -173,4 +215,7 @@ private fun doColorGradientPaint(project: Project, projectWindowCustomizer: Proj
   g.paint = GradientPaint(0f, 0f, info.verticalColor1, 0f, component.height.toFloat(), info.verticalColor2)
 
   g.fillRect(0, 0, component.width, component.height)
+
+  g.composite = initialComposite
+  islandsInactiveFrameGraphics2D?.preserveComposite = false
 }

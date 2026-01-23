@@ -12,6 +12,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import com.intellij.devkit.compose.DevkitComposeBundle
+import com.intellij.devkit.compose.icons.DevkitComposeIcons
 import com.intellij.icons.AllIcons
 import com.intellij.ide.ui.laf.darcula.ui.DarculaButtonUI
 import com.intellij.openapi.editor.colors.EditorFontType
@@ -212,7 +213,7 @@ internal class SwingComparisonTabPanel : BorderLayoutPanel() {
 
   private fun Panel.iconsRow() {
     row(DevkitComposeBundle.message("jewel.swing.icons")) {
-      cell(JBLabel(JewelIcons.ToolWindowIcon).apply { border = JBUI.Borders.customLine(JBColor.RED) })
+      cell(JBLabel(DevkitComposeIcons.JewelToolWindow).apply { border = JBUI.Borders.customLine(JBColor.RED) })
         .align(AlignY.CENTER)
 
       compose {
@@ -293,7 +294,11 @@ internal class SwingComparisonTabPanel : BorderLayoutPanel() {
 
   private fun Panel.comboBoxesRow() {
     row(DevkitComposeBundle.message("jewel.swing.combo.boxes")) {
-      // Swing ComboBoxes
+      label(DevkitComposeBundle.message("jewel.swing.label")).bold()
+    }
+      .layout(RowLayout.PARENT_GRID)
+
+    row("") {
       val zoomLevels = arrayOf("100%", "125%", "150%", "175%", "200%", "300%")
 
       JPanel()
@@ -322,7 +327,7 @@ internal class SwingComparisonTabPanel : BorderLayoutPanel() {
         }
         .run { cell(this).align(AlignY.TOP) }
 
-      val itemsComboBox = arrayOf("Cat", "Elephant", "Sun", "Book", "Laughter")
+      val itemsComboBox = arrayOf("Cat", "Elephant", "Sun", "Book", "Laughter", "Whisper", "Ocean", "Serendipity lorem ipsum", "Umbrella")
       JPanel()
         .apply {
           layout = BoxLayout(this, BoxLayout.Y_AXIS)
@@ -349,7 +354,15 @@ internal class SwingComparisonTabPanel : BorderLayoutPanel() {
           )
         }
         .run { cell(this).align(AlignY.TOP) }
+    }
+      .layout(RowLayout.PARENT_GRID)
 
+    row("") {
+      label(DevkitComposeBundle.message("jewel.compose.label")).bold()
+    }
+      .layout(RowLayout.PARENT_GRID)
+
+    row("") {
       compose(modifier = Modifier.padding(horizontal = 8.dp)) {
         val comboBoxItems = remember {
           listOf(
@@ -365,17 +378,20 @@ internal class SwingComparisonTabPanel : BorderLayoutPanel() {
             "Joy",
           )
         }
+        val zoomLevels = remember {
+          listOf("100%", "125%", "150%", "175%", "200%", "300%")
+        }
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
           Column {
             var selectedIndex by remember { mutableIntStateOf(0) }
-            val selectedText: String = comboBoxItems[selectedIndex]
+            val selectedText: String = zoomLevels[selectedIndex]
 
             Text("Not editable")
             Text(text = "Selected item: $selectedText")
 
             ListComboBox(
-              items = comboBoxItems,
+              items = zoomLevels,
               selectedIndex = selectedIndex,
               onSelectedItemChange = { selectedIndex = it },
               modifier = Modifier.width(200.dp),
@@ -384,13 +400,13 @@ internal class SwingComparisonTabPanel : BorderLayoutPanel() {
 
           Column {
             var selectedIndex by remember { mutableIntStateOf(0) }
-            val selectedText: String = comboBoxItems[selectedIndex]
+            val selectedText: String = zoomLevels[selectedIndex]
 
             Text("Not editable + disabled")
             Text(text = "Selected item: $selectedText")
 
             ListComboBox(
-              items = comboBoxItems,
+              items = zoomLevels,
               selectedIndex = selectedIndex,
               onSelectedItemChange = { selectedIndex = it },
               modifier = Modifier.width(200.dp),

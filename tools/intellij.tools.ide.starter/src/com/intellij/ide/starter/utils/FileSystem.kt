@@ -84,7 +84,7 @@ object FileSystem {
 
       val symlinks = mutableListOf<SymlinkInfo>()
 
-      JBZipFile(zipFile.toFile(), StandardCharsets.UTF_8, false, ThreeState.UNSURE).use { zip ->
+      JBZipFile(zipFile, StandardCharsets.UTF_8, false, ThreeState.UNSURE).use { zip ->
         for (entry in zip.entries) {
           if (entry.isDirectory) {
             val dir = targetDir.resolve(entry.name)
@@ -360,6 +360,9 @@ object FileSystem {
     }
   }
 
+  /**
+   * A directory is considered up to date if it was modified within the last day.
+   */
   private fun Path.isUpToDate(): Boolean {
     val lastModified = Files.getLastModifiedTime(this)
     val timeSinceLastModified = Duration.between(lastModified.toInstant(), Instant.now())

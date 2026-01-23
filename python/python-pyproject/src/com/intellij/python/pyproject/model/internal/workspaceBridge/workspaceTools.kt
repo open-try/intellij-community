@@ -13,14 +13,13 @@ import com.intellij.platform.workspace.storage.url.VirtualFileUrlManager
 import com.intellij.python.common.tools.ToolId
 import com.intellij.python.pyproject.PyProjectToml
 import com.intellij.python.pyproject.model.internal.PyProjectTomlBundle
-import com.intellij.python.pyproject.model.internal.pyProjectToml.FSWalkInfo
-import com.intellij.python.pyproject.model.internal.pyProjectToml.getProjectStructureDefault
-import com.intellij.python.pyproject.model.spi.ProjectName
-import com.intellij.python.pyproject.model.spi.PyProjectTomlProject
-import com.intellij.python.pyproject.model.spi.Tool
-import com.intellij.python.pyproject.model.spi.WorkspaceName
+import com.intellij.python.pyproject.model.internal.pyProjectToml.FSWalkInfoWithToml
+import com.intellij.python.pyproject.model.internal.pyProjectToml.getPEP621Deps
+import com.intellij.python.pyproject.model.spi.*
+import com.intellij.workspaceModel.ide.NonPersistentEntitySource
 import com.intellij.workspaceModel.ide.impl.legacyBridge.facet.FacetModelBridge.Companion.findFacet
 import com.intellij.workspaceModel.ide.impl.legacyBridge.sdk.SdkBridgeImpl.Companion.findSdkEntity
+import com.intellij.workspaceModel.ide.isEqualOrParentOf
 import com.jetbrains.python.PyNames
 import com.jetbrains.python.facet.PythonFacetSettings
 import com.jetbrains.python.venvReader.Directory
@@ -36,19 +35,41 @@ import kotlin.io.path.name
 // Workspace adapter functions
 
 
-internal suspend fun rebuildProjectModel(project: Project, files: FSWalkInfo) {
+internal suspend fun rebuildProjectModel(project: Project, files: FSWalkInfoWithToml) {
   changeWorkspaceMutex.withLock {
-    val entries = generatePyProjectTomlEntries(files)
+    val (entries, excludeDirs) = generatePyProjectTomlEntries(files)
     val newStorage = createEntityStorage(entries, project.workspaceModel.getVirtualFileUrlManager())
 
-    project.workspaceModel.update(PyProjectTomlBundle.message("action.PyProjectTomlSyncAction.description")) { currentStorage -> // Fake module entity is added by default if nothing was discovered
-      removeFakeModuleEntity(currentStorage, entries.map { it.name.name }.toSet())
+    val workspaceModel = project.workspaceModel
+    workspaceModel.update(PyProjectTomlBundle.message("action.PyProjectTomlSyncAction.description")) { currentStorage -> // Fake module entity is added by default if nothing was discovered
+      removeFakeModuleAndConflictingEntities(currentStorage, newStorage.entities(ModuleEntity::class.java))
+      // TODO: Store old module->SDK, so we can restoe it even when modules are destroyed
       relocateUserDefinedModuleSdk(currentStorage) {
         currentStorage.replaceBySource({ it is PyProjectTomlEntitySource }, newStorage)
+
+        // Exclude dirs
+        if (excludeDirs.isEmpty()) return@relocateUserDefinedModuleSdk
+        val modules = currentStorage.entities(ModuleEntity::class.java).toList()
+        for (excludedRoot in excludeDirs.map { it.toVirtualFileUrl(workspaceModel.getVirtualFileUrlManager()) }) {
+          currentStorage.excludeRoot(excludedRoot, modules)
+        }
       }
     }
   }
+}
 
+private fun MutableEntityStorage.excludeRoot(rootToExclude: VirtualFileUrl, modules: List<ModuleEntity>) {
+  for (moduleEntry in modules) {
+    for (rootEntity in moduleEntry.contentRoots) {
+      if (rootEntity.url.isEqualOrParentOf(rootToExclude) && rootToExclude !in rootEntity.excludedUrls.map { it.url }) {
+        modifyContentRootEntity(rootEntity) {
+          excludedUrls = excludedUrls + listOf(
+            ExcludeUrlEntity(rootToExclude, entitySource))
+        }
+        return
+      }
+    }
+  }
 }
 
 /**
@@ -89,35 +110,49 @@ internal fun relocateUserDefinedModuleSdk(storage: MutableEntityStorage, transfe
   }
 }
 
+/**
+ * Return [entires_to_create_modules_from, dirs_to_exclude]
+ */
 private suspend fun generatePyProjectTomlEntries(
-  fsInfo: FSWalkInfo,
-): Set<PyProjectTomlBasedEntryImpl> = withContext(Dispatchers.Default) {
+  fsInfo: FSWalkInfoWithToml,
+): Pair<Set<PyProjectTomlBasedEntryImpl>, Set<Directory>> = withContext(Dispatchers.Default) {
   val (files, allExcludeDirs) = fsInfo
   val entries = ArrayList<PyProjectTomlBasedEntryImpl>()
   val usedNamed = mutableSetOf<String>()
+  val tools = Tool.EP.extensionList
   // Any tool that helped us somehow must be tracked here
   for ((tomlFile, toml) in files.entries) {
     val participatedTools = mutableSetOf<ToolId>()
     val root = tomlFile.parent
     var projectNameAsString = toml.project?.name
     if (projectNameAsString == null) {
-      val toolAndName = getNameFromEP(toml)
+      val toolAndName = tools.getNameFromEP(toml)
       if (toolAndName != null) {
         projectNameAsString = toolAndName.second
         participatedTools.add(toolAndName.first.id)
       }
     }
-    if (projectNameAsString != null) {
-      if (projectNameAsString in usedNamed) {
-        projectNameAsString = "$projectNameAsString@${usedNamed.size}"
-      }
-      usedNamed.add(projectNameAsString)
+    if (projectNameAsString == null) {
+      projectNameAsString = root.name
     }
-    val projectName = ProjectName(projectNameAsString ?: "${root.name}@${tomlFile.hashCode()}")
+    if (projectNameAsString in usedNamed) {
+      projectNameAsString = "$projectNameAsString@${usedNamed.size}"
+    }
+    usedNamed.add(projectNameAsString)
+    val projectName = ProjectName(projectNameAsString)
     val sourceRootsAndTools = Tool.EP.extensionList.flatMap { tool -> tool.getSrcRoots(toml.toml, root).map { Pair(tool, it) } }.toSet()
     val sourceRoots = sourceRootsAndTools.map { it.second }.toSet() + findSrc(root)
     participatedTools.addAll(sourceRootsAndTools.map { it.first.id })
     val excludedDirs = allExcludeDirs.filter { it.startsWith(root) }
+    if (participatedTools.isEmpty()) {
+      // Try to use build-tool as last resort
+      toml.toml.getString("build-system.build-backend")?.let { buildBackend ->
+        tools.firstOrNull { it.id.id in buildBackend }?.let { buildTool ->
+          participatedTools.add(buildTool.id)
+        }
+      }
+    }
+
     val relationsWithTools: List<PyProjectTomlToolRelation> = participatedTools.map { PyProjectTomlToolRelation.SimpleRelation(it) }
     val entry = PyProjectTomlBasedEntryImpl(tomlFile,
                                             HashSet(relationsWithTools),
@@ -132,28 +167,38 @@ private suspend fun generatePyProjectTomlEntries(
   val entriesByName = entries.associateBy { it.name }
   val namesByDir = entries.associate { Pair(it.root, it.name) }
   val allNames = entriesByName.keys
+  var dependencies = getPEP621Deps(entriesByName, namesByDir)
   for (tool in Tool.EP.extensionList) {
-    val (dependencies, workspaceMembers) = tool.getProjectStructure(entriesByName, namesByDir)
-                                           ?: getProjectStructureDefault(entriesByName, namesByDir)
-    for ((name, deps) in dependencies) {
-      val orphanNames = deps - allNames
-      assert(orphanNames.isEmpty()) { "Tool $tool retuned wrong project names ${orphanNames.joinToString(", ")}" }
-      val entity = entriesByName[name] ?: error("Tool $tool returned broken name $name")
-      entity.dependencies.addAll(deps)
-      if (deps.isNotEmpty()) {
+    // Tool provides deps and workspace members
+    val toolSpecificInfo = tool.getProjectStructure(entriesByName, namesByDir)
+    // Tool-agnostic pep621 deps
+    if (toolSpecificInfo != null) {
+      dependencies += toolSpecificInfo.dependencies
+      for (entityName in toolSpecificInfo.dependencies.map.keys) {
+        val entity = entriesByName[entityName] ?: error("returned broken name $entityName")
         entity.relationsWithTools.add(PyProjectTomlToolRelation.SimpleRelation(tool.id))
       }
     }
+    val workspaceMembers = toolSpecificInfo?.membersToWorkspace ?: emptyMap()
+
     for ((member, workspace) in workspaceMembers) {
       entriesByName[member]!!.relationsWithTools.add(PyProjectTomlToolRelation.WorkspaceMember(tool.id, workspace))
+      entriesByName[workspace]!!.relationsWithTools.add(PyProjectTomlToolRelation.SimpleRelation(tool.id))
     }
   }
-  return@withContext entries.toSet()
+  for ((name, deps) in dependencies.map) {
+    val orphanNames = deps - allNames
+    assert(orphanNames.isEmpty()) { "wrong project names ${orphanNames.joinToString(", ")}" }
+    val entity = entriesByName[name] ?: error("returned broken name $name")
+    entity.dependencies.addAll(deps)
+  }
+  return@withContext Pair(entries.toSet(), allExcludeDirs)
 }
 
-private suspend fun getNameFromEP(projectToml: PyProjectToml): Pair<Tool, @NlsSafe String>? = withContext(Dispatchers.Default) {
-  Tool.EP.extensionList.firstNotNullOfOrNull { tool -> tool.getProjectName(projectToml.toml)?.let { Pair(tool, it) } }
-}
+private suspend fun Iterable<Tool>.getNameFromEP(projectToml: PyProjectToml): Pair<Tool, @NlsSafe String>? =
+  withContext(Dispatchers.Default) {
+    firstNotNullOfOrNull { tool -> tool.getProjectName(projectToml.toml)?.let { Pair(tool, it) } }
+  }
 
 private suspend fun createEntityStorage(
   graph: Set<PyProjectTomlBasedEntryImpl>,
@@ -226,26 +271,33 @@ private data class PyProjectTomlBasedEntryImpl(
  * Removes the default IJ module created for the root of the project
  * (that's going to be replaced with a module belonging to a specific project management system).
  *
+ * Removes JPS modules that happen to have the same root as `pyproject.toml` modules, as JPS modules are legacy.
+ *
  * @see com.intellij.openapi.project.impl.getOrInitializeModule
  */
-private fun removeFakeModuleEntity(storage: MutableEntityStorage, modulesToRemove: Set<String>) {
-  val contentRoots = storage
-    .entitiesBySource { it !is PyProjectTomlEntitySource }
-    .filterIsInstance<ContentRootEntity>()
-    .filter {
-      it.module.type == PYTHON_MODULE_ID
+private fun removeFakeModuleAndConflictingEntities(storage: MutableEntityStorage, newModules: Sequence<ModuleEntity>) {
+  val contentsToRemove = newModules.flatMap { content -> content.contentRoots.map { it.url } }.toSet()
+  val namesToRemove = newModules.map { it.name }.toSet()
+  val modulesToRemove = storage.entities(ModuleEntity::class.java)
+    .filter { moduleEntity ->
+      moduleEntity.type == PYTHON_MODULE_ID // Python module
+      && (
+        // Intersects with new module content root
+        moduleEntity.contentRoots.map { it.url }.any { it in contentsToRemove } ||
+        // Intersects by name
+        moduleEntity.name in namesToRemove ||
+        // Auto-generated, temporary module
+        moduleEntity.entitySource is NonPersistentEntitySource
+         )
     }
     .toList()
-  for (entity in contentRoots) {
-    if (entity.module.name in modulesToRemove) {
-      storage.removeEntity(entity.module)
-      storage.removeEntity(entity)
-    }
+  for (moduleToRemove in modulesToRemove) {
+    storage.removeEntity(moduleToRemove)
   }
 }
 
 /**
- * What does [toolId] have to do with a certain projec?
+ * What does [toolId] have to do with a certain project?
  */
 private sealed interface PyProjectTomlToolRelation {
   val toolId: ToolId

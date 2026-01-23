@@ -14,7 +14,6 @@ import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.editor.actions.IncrementalFindAction;
 import com.intellij.openapi.editor.event.CaretEvent;
@@ -23,7 +22,6 @@ import com.intellij.openapi.editor.event.DocumentEvent;
 import com.intellij.openapi.editor.event.DocumentListener;
 import com.intellij.openapi.editor.ex.EditorEx;
 import com.intellij.openapi.editor.markup.RangeHighlighter;
-import com.intellij.openapi.fileTypes.LanguageFileType;
 import com.intellij.openapi.fileTypes.PlainTextFileType;
 import com.intellij.openapi.progress.ProcessCanceledException;
 import com.intellij.openapi.project.Project;
@@ -34,8 +32,12 @@ import com.intellij.openapi.util.Key;
 import com.intellij.openapi.util.NlsContexts;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.wm.IdeFocusManager;
-import com.intellij.psi.*;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiFile;
+import com.intellij.psi.PsiLanguageInjectionHost;
+import com.intellij.psi.SyntaxTraverser;
 import com.intellij.ui.EditorTextField;
+import com.intellij.ui.LanguageTextField;
 import com.intellij.ui.components.JBLabel;
 import com.intellij.ui.components.JBScrollBar;
 import com.intellij.ui.scale.JBUIScale;
@@ -88,18 +90,9 @@ public final class CheckRegExpForm {
 
   public CheckRegExpForm(@NotNull PsiFile regExpFile) {
     final Project project = regExpFile.getProject();
-    final Document document = PsiDocumentManager.getInstance(project).getDocument(regExpFile);
 
-    final Language language = regExpFile.getLanguage();
-    final LanguageFileType fileType;
-    if (language instanceof RegExpLanguage) {
-      fileType = RegExpLanguage.INSTANCE.getAssociatedFileType();
-    }
-    else {
-      // for correct syntax highlighting
-      fileType = RegExpFileType.forLanguage(language);
-    }
-    myRegExp = new EditorTextField(document, project, fileType, false, false) {
+    LanguageTextField.DocumentCreator documentProvider = (value, language, project1) -> regExpFile.getViewProvider().getDocument();
+    myRegExp = new LanguageTextField(regExpFile.getLanguage(), project, regExpFile.getText(), documentProvider, false) {
       private final Disposable disposable = Disposer.newDisposable();
 
       @Override
@@ -300,37 +293,41 @@ public final class CheckRegExpForm {
   }
 
   private void highlightSampleGroup(int offset, @NotNull PsiFile regExpFile) {
-    final HighlightManager highlightManager = HighlightManager.getInstance(regExpFile.getProject());
-    removeHighlights(highlightManager);
+    ReadAction.run(() -> {
+      final HighlightManager highlightManager = HighlightManager.getInstance(regExpFile.getProject());
+      removeHighlights(highlightManager);
 
-    final List<RegExpMatch> matches = getMatches(regExpFile);
-    int index = indexOfGroupAtOffset(matches, offset);
-    if (index > 0) {
-      @Nullable RegExpGroup group =
-        SyntaxTraverser.psiTraverser(regExpFile)
-          .filter(RegExpGroup.class)
-          .filter(RegExpGroup::isCapturing)
-          .get(index - 1);
-      highlightRegExpGroup(group, highlightManager);
-      highlightMatchGroup(highlightManager, matches, index);
-    }
-    else {
-      highlightMatchGroup(highlightManager, matches, 0);
-    }
+      final List<RegExpMatch> matches = getMatches(regExpFile);
+      int index = indexOfGroupAtOffset(matches, offset);
+      if (index > 0) {
+        @Nullable RegExpGroup group =
+          SyntaxTraverser.psiTraverser(regExpFile)
+            .filter(RegExpGroup.class)
+            .filter(RegExpGroup::isCapturing)
+            .get(index - 1);
+        highlightRegExpGroup(group, highlightManager);
+        highlightMatchGroup(highlightManager, matches, index);
+      }
+      else {
+        highlightMatchGroup(highlightManager, matches, 0);
+      }
+    });
   }
 
   private void highlightRegExpGroup(int offset, @NotNull PsiFile regExpFile) {
-    final RegExpGroup group = findCapturingGroupAtOffset(regExpFile, offset);
-    final HighlightManager highlightManager = HighlightManager.getInstance(regExpFile.getProject());
-    removeHighlights(highlightManager);
-    if (group != null) {
-      final int index = SyntaxTraverser.psiTraverser(regExpFile).filter(RegExpGroup.class).indexOf(e -> e == group) + 1;
-      highlightRegExpGroup(group, highlightManager);
-      highlightMatchGroup(highlightManager, getMatches(regExpFile), index);
-    }
-    else {
-      highlightMatchGroup(highlightManager, getMatches(regExpFile), 0);
-    }
+    ReadAction.run(() -> {
+      final RegExpGroup group = findCapturingGroupAtOffset(regExpFile, offset);
+      final HighlightManager highlightManager = HighlightManager.getInstance(regExpFile.getProject());
+      removeHighlights(highlightManager);
+      if (group != null) {
+        final int index = SyntaxTraverser.psiTraverser(regExpFile).filter(RegExpGroup.class).indexOf(e -> e == group) + 1;
+        highlightRegExpGroup(group, highlightManager);
+        highlightMatchGroup(highlightManager, getMatches(regExpFile), index);
+      }
+      else {
+        highlightMatchGroup(highlightManager, getMatches(regExpFile), 0);
+      }
+    });
   }
 
   private static int indexOfGroupAtOffset(List<RegExpMatch> matches, int offset) {
@@ -389,7 +386,7 @@ public final class CheckRegExpForm {
     final PsiElement[] array = {group};
     List<RangeHighlighter> highlighter = new SmartList<>();
     highlightManager.addOccurrenceHighlights(editor, array, RegExpHighlighter.MATCHED_GROUPS, true, highlighter);
-    myRegExpHighlight = highlighter.get(0);
+    myRegExpHighlight = highlighter.getFirst();
   }
 
   private void removeHighlights(HighlightManager highlightManager) {

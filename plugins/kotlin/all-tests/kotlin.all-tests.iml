@@ -17,7 +17,6 @@
     <orderEntry type="module" module-name="intellij.kotlin.jvm.debugger.eval4j" scope="RUNTIME" />
     <orderEntry type="module" module-name="intellij.kotlin.native.tests" scope="RUNTIME" />
     <orderEntry type="module" module-name="kotlin.jvm-debugger.test" scope="RUNTIME" />
-    <orderEntry type="module" module-name="intellij.kotlin.maven.tests" scope="RUNTIME" />
     <orderEntry type="module" module-name="intellij.kotlin.gradle.tooling" scope="RUNTIME" />
     <orderEntry type="module" module-name="intellij.kotlin.gradle.tooling.impl" scope="RUNTIME" />
     <orderEntry type="module" module-name="kotlin.gradle.gradle-java" scope="RUNTIME" />
@@ -26,7 +25,6 @@
     <orderEntry type="module" module-name="intellij.kotlin.gradle.tooling.tests" scope="RUNTIME" />
     <orderEntry type="module" module-name="kotlin.gradle.scripting.k1" scope="RUNTIME" />
     <orderEntry type="module" module-name="kotlin.compiler-reference-index.tests" scope="RUNTIME" />
-    <orderEntry type="module" module-name="intellij.kotlin.coverage.tests" scope="RUNTIME" />
     <orderEntry type="module" module-name="kotlin.j2k.k1.new.tests" scope="RUNTIME" />
     <orderEntry type="module" module-name="kotlin.j2k.shared.tests" scope="RUNTIME" />
     <orderEntry type="module" module-name="kotlin.jps.graphImplementationTests" scope="RUNTIME" />
@@ -45,8 +43,6 @@
     <orderEntry type="module" module-name="kotlin.compiler-plugins.noarg.tests" scope="RUNTIME" />
     <orderEntry type="module" module-name="kotlin.compiler-plugins.parcelize.tests.k1" scope="RUNTIME" />
     <orderEntry type="module" module-name="kotlin.compiler-plugins.kotlinx-serialization.tests" scope="RUNTIME" />
-    <orderEntry type="module" module-name="kotlin.performance-tests.performance-test-utils" scope="RUNTIME" />
-    <orderEntry type="module" module-name="kotlin.performance-tests" scope="RUNTIME" />
     <orderEntry type="module" module-name="intellij.kotlin.base.util" scope="RUNTIME" />
     <orderEntry type="module" module-name="intellij.kotlin.testFramework" scope="RUNTIME" />
     <orderEntry type="module" module-name="intellij.kotlin.common.tests" scope="RUNTIME" />

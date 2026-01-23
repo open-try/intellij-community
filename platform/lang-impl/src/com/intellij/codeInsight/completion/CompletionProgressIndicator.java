@@ -1,4 +1,4 @@
-// Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
+// Copyright 2000-2026 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 
 package com.intellij.codeInsight.completion;
 
@@ -380,8 +380,12 @@ public final class CompletionProgressIndicator extends ProgressIndicatorBase imp
   private void trackModifiers() {
     assert !isAutopopupCompletion();
 
-    final JComponent contentComponent = myEditor.getContentComponent();
-    contentComponent.addKeyListener(new ModifierTracker(contentComponent));
+    JComponent contentComponent = myEditor.getContentComponent();
+    ModifierTracker modifierTracker = new ModifierTracker(contentComponent);
+    contentComponent.addKeyListener(modifierTracker);
+    Disposer.register(this, () -> {
+      contentComponent.removeKeyListener(modifierTracker);
+    });
   }
 
   void setMergeCommand() {
@@ -500,9 +504,6 @@ public final class CompletionProgressIndicator extends ProgressIndicatorBase imp
     }
     if (isAutopopupCompletion()) {
       if (count == 0) {
-        return false;
-      }
-      if (lookup.isCalculating() && Registry.is("ide.completion.delay.autopopup.until.completed")) {
         return false;
       }
     }
@@ -835,20 +836,32 @@ public final class CompletionProgressIndicator extends ProgressIndicatorBase imp
 
   @Override
   public void prefixUpdated() {
-    final int caretOffset = myEditor.getCaretModel().getOffset();
-    if (caretOffset < myStartCaret) {
+    if (isRestartRequired()) {
+      LOG.debug("prefixUpdated: restarting completion");
       scheduleRestart();
       myRestartingPrefixConditions.clear();
-      return;
+    }
+    else {
+      LOG.debug("prefixUpdated:  no restart needed");
+      hideAutopopupIfMeaningless();
+    }
+  }
+
+  private boolean isRestartRequired() {
+    if (myEditor.getCaretModel().getOffset() < myStartCaret) {
+      // always restart if caret moved before prefix start
+      return true;
     }
 
-    if (shouldRestartCompletion(myEditor, myRestartingPrefixConditions, "")) {
-      scheduleRestart();
-      myRestartingPrefixConditions.clear();
-      return;
+    if (CompletionServiceImpl.isPhase(CompletionPhase.BgCalculation.class)) {
+      // We must restart completion if candidates are still being inferred.
+      // Otherwise, the not-yet-processed contributors have no chance to install their own prefix conditions.
+      // Alternatively, this can be solved by delayed processing of possible future prefix conditions, but that's a more tricky solution.
+      return true;
     }
 
-    hideAutopopupIfMeaningless();
+    // restart if myRestartingPrefixConditions say so
+    return shouldRestartCompletion(myEditor, myRestartingPrefixConditions, "");
   }
 
   @ApiStatus.Internal
@@ -876,7 +889,7 @@ public final class CompletionProgressIndicator extends ProgressIndicatorBase imp
   @Override
   public void scheduleRestart() {
     ThreadingAssertions.assertEventDispatchThread();
-    LOG.trace("Scheduling restart");
+    LOG.debug("Scheduling restart");
     if (handler.isTestingMode() && !TestModeFlags.is(CompletionAutoPopupHandler.ourTestingAutopopup)) {
       closeAndFinish(false);
       PsiDocumentManager.getInstance(getProject()).commitAllDocuments();

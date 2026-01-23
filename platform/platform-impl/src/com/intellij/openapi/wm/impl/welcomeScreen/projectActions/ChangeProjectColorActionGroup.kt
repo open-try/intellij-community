@@ -52,7 +52,7 @@ class ChangeProjectColorActionGroup: DefaultActionGroup(), DumbAware, ActionRemo
   }
 }
 
-private class ChangeProjectColorAction(
+internal class ChangeProjectColorAction(
   projectPath: Path,
   val name: @NlsSafe String,
   val index: Int,
@@ -88,7 +88,7 @@ private class ChangeProjectColorAction(
   }
 }
 
-private class ChooseCustomProjectColorAction: AnAction(IdeBundle.message("action.ChooseCustomProjectColorAction.title")), DumbAware {
+internal class ChooseCustomProjectColorAction: AnAction(IdeBundle.message("action.ChooseCustomProjectColorAction.title")), DumbAware {
   override fun actionPerformed(e: AnActionEvent) {
     val project = e.project!!
     val ideFrame = IdeFocusManager.getInstance(project).lastFocusedFrame
@@ -102,7 +102,7 @@ private class ChooseCustomProjectColorAction: AnAction(IdeBundle.message("action
       currentColor = ProjectWindowCustomizerService.getInstance().getProjectColorToCustomize(project),
       listener = { color, _ ->
         ProjectWindowCustomizerService.getInstance().setCustomProjectColor(project, color)
-        e.project?.let { repaintFrame(it) }
+        repaintFrame(e.project)
       },
       location = relativePoint,
     )
@@ -115,6 +115,6 @@ private class ChooseCustomProjectColorAction: AnAction(IdeBundle.message("action
   }
 }
 
-private fun repaintFrame(project: Project) {
+internal fun repaintFrame(project: Project?) {
   WindowManager.getInstance().getIdeFrame(project)?.component?.repaint()
 }

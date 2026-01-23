@@ -10,6 +10,7 @@ import com.intellij.internal.statistic.service.fus.collectors.UIEventLogger.Stat
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.actionSystem.*
 import com.intellij.openapi.application.*
+import com.intellij.openapi.application.impl.InternalUICustomization
 import com.intellij.openapi.components.service
 import com.intellij.openapi.components.serviceAsync
 import com.intellij.openapi.diagnostic.debug
@@ -17,9 +18,9 @@ import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.extensions.LoadingOrder
 import com.intellij.openapi.extensions.LoadingOrder.Orderable
 import com.intellij.openapi.fileEditor.FileEditor
-import com.intellij.openapi.progress.ProgressIndicatorModel
 import com.intellij.openapi.progress.ProgressModel
 import com.intellij.openapi.progress.TaskInfo
+import com.intellij.openapi.progress.impl.BridgeTaskSupport
 import com.intellij.openapi.progress.impl.PerProjectTaskInfoEntityCollector
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.MessageType
@@ -29,7 +30,6 @@ import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.util.Key
 import com.intellij.openapi.util.NlsContexts
 import com.intellij.openapi.util.SystemInfoRt
-import com.intellij.openapi.util.registry.Registry
 import com.intellij.openapi.util.text.Strings
 import com.intellij.openapi.wm.*
 import com.intellij.openapi.wm.StatusBarWidget.*
@@ -58,7 +58,6 @@ import com.intellij.ui.util.height
 import com.intellij.util.EventDispatcher
 import com.intellij.util.concurrency.annotations.RequiresEdt
 import com.intellij.util.ui.EdtInvocationManager
-import com.intellij.util.ui.JBSwingUtilities
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
 import kotlinx.coroutines.*
@@ -126,8 +125,6 @@ open class IdeStatusBarImpl @Internal constructor(
   private val listeners = EventDispatcher.create(StatusBarListener::class.java)
 
   private val progressFlow = MutableSharedFlow<ProgressSetChangeEvent>(replay = 1, extraBufferCapacity = Int.MAX_VALUE)
-
-  internal var borderPainter: BorderPainter = DefaultBorderPainter()
 
   companion object {
     internal val HOVERED_WIDGET_ID: DataKey<String> = DataKey.create("HOVERED_WIDGET_ID")
@@ -303,7 +300,7 @@ open class IdeStatusBarImpl @Internal constructor(
    * @param widget widget to add
    */
   internal suspend fun addWidgetToLeft(widget: StatusBarWidget) {
-    withContext(Dispatchers.EDT) {
+    withContext(Dispatchers.UiWithModelAccess) {
       addWidget(widget, Position.LEFT, LoadingOrder.ANY)
     }
   }
@@ -331,7 +328,7 @@ open class IdeStatusBarImpl @Internal constructor(
     // Create components in parallel (performance optimization)
     val beans: List<WidgetBean> = span("status bar widget creating") {
       widgets.map { (widget, anchor) ->
-        val component = span(widget.ID(), Dispatchers.EDT + anyModality) {
+        val component = span(widget.ID(), Dispatchers.UiWithModelAccess + anyModality) {
           val c = wrap(widget)
           if (c is StatusBarWidgetWrapper) {
             c.beforeUpdate()
@@ -342,7 +339,7 @@ open class IdeStatusBarImpl @Internal constructor(
       }
     }
 
-    withContext(Dispatchers.EDT + anyModality + CoroutineName("status bar widget adding")) {
+    withContext(Dispatchers.UiWithModelAccess + anyModality + CoroutineName("status bar widget adding")) {
       // Add all to self
       for (bean in beans) {
         addWidgetToSelf(bean, parentDisposable)
@@ -359,14 +356,14 @@ open class IdeStatusBarImpl @Internal constructor(
 
     // Fire events
     if (listeners.hasListeners()) {
-      withContext(Dispatchers.EDT + anyModality) {
+      withContext(Dispatchers.UiWithModelAccess + anyModality) {
         for (bean in beans) {
           fireWidgetAdded(bean.widget, bean.anchor)
         }
       }
     }
 
-    withContext(Dispatchers.EDT) {
+    withContext(Dispatchers.UiWithModelAccess) {
       PopupHandler.installPopupMenu(this@IdeStatusBarImpl, StatusBarWidgetsActionGroup.GROUP_ID, ActionPlaces.STATUS_BAR_PLACE)
     }
   }
@@ -475,13 +472,8 @@ open class IdeStatusBarImpl @Internal constructor(
 
   @Suppress("UsagesOfObsoleteApi")
   override fun addProgress(indicator: ProgressIndicatorEx, info: TaskInfo) {
-    if (Registry.`is`("rhizome.progress")) {
-      @Suppress("DEPRECATION")
-      com.intellij.openapi.progress.impl.BridgeTaskSupport.getInstance().withBridgeBackgroundProgress(project, indicator, info)
-    }
-    else {
-      addProgressImpl(ProgressIndicatorModel(indicator, info.title, info.isCancellable), info)
-    }
+    @Suppress("DEPRECATION")
+    BridgeTaskSupport.getInstance().withBridgeBackgroundProgress(project, indicator, info)
   }
 
   internal fun addProgressImpl(progressModel: ProgressModel, info: TaskInfo) {
@@ -561,7 +553,6 @@ open class IdeStatusBarImpl @Internal constructor(
   override fun paintChildren(g: Graphics) {
     effectRenderer.paintBackground(g)
     super.paintChildren(g)
-    borderPainter.paintAfterChildren(this, g)
   }
 
   private fun dispatchMouseEvent(e: MouseEvent): Boolean {
@@ -641,7 +632,7 @@ open class IdeStatusBarImpl @Internal constructor(
   }
 
   override fun getComponentGraphics(g: Graphics): Graphics {
-    return JBSwingUtilities.runGlobalCGTransform(this, super.getComponentGraphics(g))
+    return InternalUICustomization.runGlobalCGTransformWithInactiveFrameSupport(this, super.getComponentGraphics(g))
   }
 
   override fun removeWidget(id: String) {
@@ -700,15 +691,16 @@ open class IdeStatusBarImpl @Internal constructor(
   override val project: Project?
     get() = getProject()
 
-  private val defaultEditorFlow: StateFlow<FileEditor?> by lazy {
-    val project = project ?: return@lazy MutableStateFlow(null)
-    project.service<StatusBarWidgetsManager>().dataContext.currentFileEditor
-  }
-
   @get:Internal
-  override val currentEditor: StateFlow<FileEditor?> = customCurrentFileEditorFlow
-    .flatMapLatest { it ?: defaultEditorFlow }
-    .stateIn(coroutineScope, SharingStarted.Eagerly, null)
+  override val currentEditor: StateFlow<FileEditor?> by lazy {
+    customCurrentFileEditorFlow
+      .flatMapLatest { customFlow ->
+        customFlow
+        ?: project?.serviceAsync<StatusBarWidgetsManager>()?.dataContext?.currentFileEditor
+        ?: emptyFlow()
+      }
+      .stateIn(coroutineScope, SharingStarted.Eagerly, null)
+  }
 
   @Internal
   fun setCurrentFileEditorFlow(flow: StateFlow<FileEditor?>?) {

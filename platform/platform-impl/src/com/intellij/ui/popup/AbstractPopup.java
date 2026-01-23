@@ -1,4 +1,4 @@
-// Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
+// Copyright 2000-2026 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.ui.popup;
 
 import com.google.common.base.Predicate;
@@ -21,6 +21,7 @@ import com.intellij.openapi.actionSystem.impl.AutoPopupSupportingListener;
 import com.intellij.openapi.actionSystem.impl.Utils;
 import com.intellij.openapi.application.AccessToken;
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.WriteIntentReadAction;
 import com.intellij.openapi.application.impl.LaterInvocator;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Editor;
@@ -86,7 +87,7 @@ import static java.awt.event.MouseEvent.*;
 import static java.awt.event.WindowEvent.WINDOW_ACTIVATED;
 import static java.awt.event.WindowEvent.WINDOW_GAINED_FOCUS;
 
-public class AbstractPopup implements JBPopup, ScreenAreaConsumer, AlignedPopup {
+public class AbstractPopup implements JBPopup, ScreenAreaConsumer, AlignedPopup, UserDataHolder {
   public static final @NonNls String SHOW_HINTS = "ShowHints";
 
   // Popup size stored with DimensionService is null first time.
@@ -243,6 +244,8 @@ public class AbstractPopup implements JBPopup, ScreenAreaConsumer, AlignedPopup 
 
   private volatile State myState = State.NEW;
   private long myOpeningTime;
+
+  private final UserDataHolderBase myUserDataHolder = new UserDataHolderBase();
 
   void setNormalWindowLevel(boolean normalWindowLevel) {
     myNormalWindowLevel = normalWindowLevel;
@@ -1329,8 +1332,9 @@ public class AbstractPopup implements JBPopup, ScreenAreaConsumer, AlignedPopup 
       setSize(targetBounds.getSize()); // Might need to make it smaller than its preferred size.
     }
 
+    final JRootPane root = myContent.getRootPane();
+
     if (myResizable) {
-      final JRootPane root = myContent.getRootPane();
       final IdeGlassPaneImpl glass = new IdeGlassPaneImpl(root);
       root.setGlassPane(glass);
 
@@ -1355,6 +1359,11 @@ public class AbstractPopup implements JBPopup, ScreenAreaConsumer, AlignedPopup 
     if (window instanceof IdeFrame) {
       LOG.warn("Lightweight popup is shown using AbstractPopup class. But this class is not supposed to work with lightweight popups.");
     }
+
+    // In some environments, e.g. native Wayland, the default root and/or window background (white)
+    // may be displayed briefly, causing very noticeable flickering in dark themes (IJPL-222913).
+    window.setBackground(myContent.getBackground());
+    root.setBackground(myContent.getBackground());
 
     window.setFocusableWindowState(myFocusable);
     window.setFocusable(myRequestFocus);
@@ -2081,7 +2090,7 @@ public class AbstractPopup implements JBPopup, ScreenAreaConsumer, AlignedPopup 
       Runnable finalRunnable = myFinalRunnable;
       getFocusManager().doWhenFocusSettlesDown(() -> {
         try (AccessToken ignore = SlowOperations.startSection(SlowOperations.ACTION_PERFORM)) {
-          finalRunnable.run();
+          WriteIntentReadAction.run(finalRunnable);
         }
       });
       myFinalRunnable = null;
@@ -2987,5 +2996,16 @@ public class AbstractPopup implements JBPopup, ScreenAreaConsumer, AlignedPopup 
 
   private static boolean shouldUseTrueWaylandPopups() {
     return StartupUiUtil.isWaylandToolkit() && Registry.is("wayland.true.popups", false);
+  }
+
+  @Override
+  public <T> void putUserData(@NotNull Key<T> key, @Nullable T value) {
+    myUserDataHolder.putUserData(key, value);
+  }
+
+  @Override
+  @Nullable
+  public <T> T getUserData(@NotNull Key<T> key) {
+    return myUserDataHolder.getUserData(key);
   }
 }

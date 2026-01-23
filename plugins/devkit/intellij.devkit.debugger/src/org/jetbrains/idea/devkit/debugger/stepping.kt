@@ -1,4 +1,4 @@
-// Copyright 2000-2024 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
+// Copyright 2000-2026 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package org.jetbrains.idea.devkit.debugger
 
 import com.intellij.debugger.engine.*
@@ -29,6 +29,10 @@ private object PauseListener : DebuggerManagerListener {
         val sessionData = getSessionData(context.debugProcess.session) ?: return
         sessionData.setNonCancellableSection(context)
       }
+
+      override fun processDetached(process: DebugProcess, closedByUser: Boolean) {
+        process.removeDebugProcessListener(this)
+      }
     })
   }
 
@@ -40,7 +44,7 @@ private object PauseListener : DebuggerManagerListener {
   fun getSessionData(session: DebuggerSession): SessionThreadsData? = sessions[session]
 }
 
-private class ResumeListener : SteppingListener {
+internal class ResumeListener : SteppingListener {
   override fun beforeResume(suspendContext: SuspendContextImpl) {
     val sessionData = PauseListener.getSessionData(suspendContext.debugProcess.session) ?: return
     sessionData.resetNonCancellableSection(suspendContext)

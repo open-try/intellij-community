@@ -1207,8 +1207,6 @@ f:com.intellij.execution.wsl.WslPath
 - <init>(java.lang.String,java.lang.String):V
 - f:component2():java.lang.String
 - f:component3():java.lang.String
-- f:copy(java.lang.String,java.lang.String,java.lang.String):com.intellij.execution.wsl.WslPath
-- bs:copy$default(com.intellij.execution.wsl.WslPath,java.lang.String,java.lang.String,java.lang.String,I,java.lang.Object):com.intellij.execution.wsl.WslPath
 - equals(java.lang.Object):Z
 - f:getDistribution():com.intellij.execution.wsl.WSLDistribution
 - sf:getDistributionByWindowsUncPath(java.lang.String):com.intellij.execution.wsl.WSLDistribution
@@ -7303,10 +7301,8 @@ a:com.intellij.openapi.fileEditor.ex.FileEditorManagerEx
 - a:isInSplitter():Z
 - a:notifyPublisher(java.lang.Runnable):V
 - f:openFile(com.intellij.openapi.vfs.VirtualFile):java.util.List
-- a:openFile(com.intellij.openapi.vfs.VirtualFile,com.intellij.openapi.fileEditor.impl.EditorWindow,com.intellij.openapi.fileEditor.impl.FileEditorOpenOptions):com.intellij.openapi.fileEditor.FileEditorComposite
 - openFile(com.intellij.openapi.vfs.VirtualFile,Z):com.intellij.openapi.fileEditor.FileEditor[]
 - f:openFile(com.intellij.openapi.vfs.VirtualFile,Z,Z):com.intellij.openapi.fileEditor.FileEditor[]
-- bs:openFile$default(com.intellij.openapi.fileEditor.ex.FileEditorManagerEx,com.intellij.openapi.vfs.VirtualFile,com.intellij.openapi.fileEditor.impl.EditorWindow,com.intellij.openapi.fileEditor.impl.FileEditorOpenOptions,I,java.lang.Object):com.intellij.openapi.fileEditor.FileEditorComposite
 - f:openFileWithProviders(com.intellij.openapi.vfs.VirtualFile,Z,com.intellij.openapi.fileEditor.impl.EditorWindow):com.intellij.openapi.util.Pair
 - f:openFileWithProviders(com.intellij.openapi.vfs.VirtualFile,Z,Z):com.intellij.openapi.util.Pair
 - refreshIcons():V
@@ -13344,16 +13340,6 @@ f:com.intellij.ui.layout.LayoutKt
 - sf:initPanel(com.intellij.ui.layout.LayoutBuilder,com.intellij.openapi.ui.DialogPanel):V
 - sf:panel(com.intellij.ui.layout.LCFlags[],java.lang.String,kotlin.jvm.functions.Function1):com.intellij.openapi.ui.DialogPanel
 - bs:panel$default(com.intellij.ui.layout.LCFlags[],java.lang.String,kotlin.jvm.functions.Function1,I,java.lang.Object):com.intellij.openapi.ui.DialogPanel
-f:com.intellij.ui.layout.PropertyBinding
-- <init>(kotlin.jvm.functions.Function0,kotlin.jvm.functions.Function1):V
-- f:component1():kotlin.jvm.functions.Function0
-- f:component2():kotlin.jvm.functions.Function1
-- f:copy(kotlin.jvm.functions.Function0,kotlin.jvm.functions.Function1):com.intellij.ui.layout.PropertyBinding
-- bs:copy$default(com.intellij.ui.layout.PropertyBinding,kotlin.jvm.functions.Function0,kotlin.jvm.functions.Function1,I,java.lang.Object):com.intellij.ui.layout.PropertyBinding
-- equals(java.lang.Object):Z
-- f:getGet():kotlin.jvm.functions.Function0
-- f:getSet():kotlin.jvm.functions.Function1
-- hashCode():I
 a:com.intellij.ui.layout.Row
 - com.intellij.ui.layout.Cell
 - com.intellij.ui.layout.RowBuilder
@@ -13363,11 +13349,6 @@ f:com.intellij.ui.layout.RowBuilder$DefaultImpls
 - bs:createChildRow$default(com.intellij.ui.layout.RowBuilder,javax.swing.JLabel,Z,I,java.lang.Object):com.intellij.ui.layout.Row
 - bs:row$default(com.intellij.ui.layout.RowBuilder,java.lang.String,Z,kotlin.jvm.functions.Function1,I,java.lang.Object):com.intellij.ui.layout.Row
 - bs:row$default(com.intellij.ui.layout.RowBuilder,javax.swing.JLabel,Z,kotlin.jvm.functions.Function1,I,java.lang.Object):com.intellij.ui.layout.Row
-f:com.intellij.ui.layout.RowBuilderWithButtonGroupProperty
-- com.intellij.ui.layout.RowBuilder
-- b:<init>(com.intellij.ui.layout.RowBuilder,com.intellij.ui.layout.PropertyBinding):V
-- b:row(java.lang.String,Z,kotlin.jvm.functions.Function1):com.intellij.ui.layout.Row
-- b:row(javax.swing.JLabel,Z,kotlin.jvm.functions.Function1):com.intellij.ui.layout.Row
 f:com.intellij.ui.layout.ValidationInfoBuilder
 - <init>(javax.swing.JComponent):V
 - f:error(java.lang.String):com.intellij.openapi.ui.ValidationInfo
@@ -13471,6 +13452,7 @@ c:com.intellij.ui.popup.AbstractPopup
 - com.intellij.ide.ui.ScreenAreaConsumer
 - com.intellij.openapi.ui.popup.AlignedPopup
 - com.intellij.openapi.ui.popup.JBPopup
+- com.intellij.openapi.util.UserDataHolder
 - sf:FIRST_TIME_SIZE:java.lang.String
 - sf:SHOW_HINTS:java.lang.String
 - p:myOk:Z
@@ -13519,6 +13501,7 @@ c:com.intellij.ui.popup.AbstractPopup
 - getSizeForPositioning():java.awt.Dimension
 - getTitle():com.intellij.ui.CaptionPanel
 - getUnderlyingWindow():java.awt.Window
+- getUserData(com.intellij.openapi.util.Key):java.lang.Object
 - getUserData(java.lang.Class):java.lang.Object
 - p:init(com.intellij.openapi.project.Project,javax.swing.JComponent,javax.swing.JComponent,Z,Z,Z,java.lang.String,Z,java.lang.String,com.intellij.openapi.util.Computable,Z,java.util.Set,Z,com.intellij.ui.ActiveComponent,com.intellij.openapi.ui.popup.IconButton,com.intellij.openapi.ui.popup.MouseChecker,Z,com.intellij.openapi.ui.popup.ActiveIcon,Z,Z,Z,java.awt.Dimension,F,com.intellij.openapi.ui.popup.MaskProvider,Z,Z,java.awt.Component[],java.lang.String,I,Z,java.util.List,java.awt.Component,com.intellij.util.Processor,Z,Z,Z,java.awt.Color,Z,com.intellij.util.BooleanFunction):com.intellij.ui.popup.AbstractPopup
 - p:isAdVisible():Z
@@ -13535,6 +13518,7 @@ c:com.intellij.ui.popup.AbstractPopup
 - notifyListeners():V
 - p:onSpeedSearchPatternChanged():V
 - pack(Z,Z):V
+- putUserData(com.intellij.openapi.util.Key,java.lang.Object):V
 - removeListener(com.intellij.openapi.ui.popup.JBPopupListener):V
 - pf:requestFocus():Z
 - setAdText(java.lang.String):V

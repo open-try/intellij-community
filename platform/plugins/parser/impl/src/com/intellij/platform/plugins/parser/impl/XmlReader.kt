@@ -508,6 +508,7 @@ private fun readServiceElement(reader: XMLStreamReader2, os: OSValue?): ServiceE
   var headlessImplementation: String? = null
   var configurationSchemaKey: String? = null
   var overrides = false
+  var open = false
   var preload = PreloadModeValue.FALSE
   var client: ClientKindValue? = null
   for (i in 0 until reader.attributeCount) {
@@ -518,6 +519,7 @@ private fun readServiceElement(reader: XMLStreamReader2, os: OSValue?): ServiceE
       PluginXmlConst.SERVICE_EP_HEADLESS_IMPLEMENTATION_ATTR -> headlessImplementation = getNullifiedAttributeValue(reader, i)
       PluginXmlConst.SERVICE_EP_CONFIGURATION_SCHEMA_KEY_ATTR -> configurationSchemaKey = reader.getAttributeValue(i)
       PluginXmlConst.SERVICE_EP_OVERRIDES_ATTR -> overrides = reader.getAttributeAsBoolean(i)
+      PluginXmlConst.SERVICE_EP_OPEN_ATTR -> open = reader.getAttributeAsBoolean(i)
       PluginXmlConst.SERVICE_EP_PRELOAD_ATTR -> {
         when (reader.getAttributeValue(i)) {
           PluginXmlConst.SERVICE_EP_PRELOAD_TRUE_VALUE -> preload = PreloadModeValue.TRUE
@@ -549,6 +551,7 @@ private fun readServiceElement(reader: XMLStreamReader2, os: OSValue?): ServiceE
     testServiceImplementation = testServiceImplementation,
     headlessImplementation = headlessImplementation,
     overrides = overrides,
+    open = open,
     configurationSchemaKey = configurationSchemaKey,
     preload = preload,
     client = client,
@@ -1024,6 +1027,8 @@ private fun getEventTypeString(eventType: Int): String {
 class ContentParseResult(
   @JvmField val contentModules: List<ContentModuleElement>,
   @JvmField val xIncludePaths: List<String>,
+  /** Module dependencies from <dependencies><module name="..."/> elements */
+  @JvmField val moduleDependencies: List<String> = emptyList(),
 )
 
 /**
@@ -1057,6 +1062,7 @@ fun parseContentAndXIncludes(input: ByteArray, locationSource: String?): Content
 private fun parseElementForContentAndIncludes(reader: XMLStreamReader2): ContentParseResult {
   val xIncludePaths = ArrayList<String>()
   val contentModules = ArrayList<ContentModuleElement>()
+  val moduleDependencies = ArrayList<String>()
   consumeChildElements(reader) { localName ->
     when (localName) {
       PluginXmlConst.INCLUDE_ELEM if reader.namespaceURI == PluginXmlConst.XINCLUDE_NAMESPACE_URI -> {
@@ -1078,6 +1084,18 @@ private fun parseElementForContentAndIncludes(reader: XMLStreamReader2): Content
           }
         }
       }
+      PluginXmlConst.DEPENDENCIES_ELEM -> {
+        // Parse module dependencies
+        consumeChildElements(reader) { childName ->
+          if (childName == PluginXmlConst.DEPENDENCIES_MODULE_ELEM) {
+            val name = XmlReadUtils.findAttributeValue(reader, PluginXmlConst.DEPENDENCIES_MODULE_NAME_ATTR)
+            if (name != null) {
+              moduleDependencies.add(name)
+            }
+          }
+          reader.skipElement()
+        }
+      }
       else -> {
         // Recursively check nested elements for xi:includes (they can appear at root level only,
         // but we still need to traverse to find them in case of nested structures)
@@ -1088,7 +1106,7 @@ private fun parseElementForContentAndIncludes(reader: XMLStreamReader2): Content
       }
     }
   }
-  return ContentParseResult(contentModules, xIncludePaths)
+  return ContentParseResult(contentModules, xIncludePaths, moduleDependencies)
 }
 
 private fun readContentModuleElement(reader: XMLStreamReader2): ContentModuleElement {

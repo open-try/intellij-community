@@ -8,7 +8,6 @@ import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.diagnostic.trace
 import com.intellij.openapi.vcs.AbstractVcsHelper
 import com.intellij.openapi.vcs.changes.*
-import com.intellij.openapi.vcs.changes.ui.ChangesViewContentManager
 import com.intellij.platform.project.ProjectId
 import com.intellij.platform.vcs.impl.shared.commit.EditedCommitPresentation
 import com.intellij.platform.vcs.impl.shared.rpc.BackendChangesViewEvent
@@ -16,28 +15,34 @@ import com.intellij.platform.vcs.impl.shared.rpc.ChangeId
 import com.intellij.platform.vcs.impl.shared.rpc.ChangesViewApi
 import com.intellij.platform.vcs.impl.shared.rpc.InclusionDto
 import com.intellij.vcs.changes.viewModel.getRpcChangesView
+import com.intellij.vcs.commit.CommitModeManager
 import com.intellij.vcs.rpc.ProjectScopeRpcHelper.getProjectScoped
 import com.intellij.vcs.rpc.ProjectScopeRpcHelper.projectScoped
 import com.intellij.vcs.rpc.ProjectScopeRpcHelper.projectScopedCallbackFlow
 import kotlinx.coroutines.*
-import kotlinx.coroutines.channels.SendChannel
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.*
 
 internal class ChangesViewApiImpl : ChangesViewApi {
   override suspend fun getBackendChangesViewEvents(projectId: ProjectId): Flow<BackendChangesViewEvent> =
     projectScopedCallbackFlow(projectId) { project, _ ->
       val changesViewModel = project.getRpcChangesView()
+      val inclusion = MutableSharedFlow<Set<Any>>(replay = 1)
+      launch {
+        inclusion.map { includedItems ->
+          includedItems.map { item -> InclusionDto.toDto(item) }
+        }.distinctUntilChanged().collect { send(BackendChangesViewEvent.InclusionChanged(it)) }
+      }
 
       launch {
         changesViewModel.inclusionModel.collectLatest { newModel ->
           if (newModel != null) {
             LOG.trace { "New inclusion model is set" }
-            handleNewInclusionModel(newModel, channel)
+            // Terminates when the new model is assigned
+            handleNewInclusionModel(newModel, inclusion::emit)
           }
           else {
             LOG.trace { "Inclusion model is null" }
+            inclusion.emit(emptySet())
           }
         }
       }
@@ -60,15 +65,14 @@ internal class ChangesViewApiImpl : ChangesViewApi {
 
   override suspend fun showResolveConflictsDialog(projectId: ProjectId, changeIds: List<ChangeId>) = projectScoped(projectId) { project ->
     LOG.trace { "Showing resolve conflicts dialog for ${changeIds.size} changes" }
-    val cache = ChangesViewChangeIdCache.getInstance(project)
-    val changes = changeIds.mapNotNull { cache.getChangeListChange(it) }
+    val changes = ChangesViewChangeIdProvider.getInstance(project).getChangeListChanges(changeIds)
     withContext(Dispatchers.EDT) {
       AbstractVcsHelper.getInstance(project).showMergeDialog(ChangesUtil.iterateFiles(changes).toList())
     }
   }
 
   override suspend fun isCommitToolWindowEnabled(projectId: ProjectId): Flow<Boolean> = getProjectScoped(projectId) { project ->
-    ChangesViewContentManager.getInstanceImpl(project)?.isCommitToolWindowEnabled
+    project.serviceAsync<CommitModeManager>().commitModeState.map { it.isCommitTwEnabled }
   } ?: flowOf(false)
 
   override suspend fun synchronizeInclusion(projectId: ProjectId) = projectScoped(projectId) { project ->
@@ -84,25 +88,28 @@ internal class ChangesViewApiImpl : ChangesViewApi {
     project.serviceAsync<ChangesViewWorkflowManager>().editedCommit
   } ?: flowOf(null)
 
-  private suspend fun handleNewInclusionModel(newModel: InclusionModel, channel: SendChannel<BackendChangesViewEvent>): Nothing {
+  /**
+   * Subscribes [model] to report the current inclusion state on its update. Also, reports the initial inclusion state.
+   *
+   * @see [InclusionListener.inclusionChanged]
+   */
+  private suspend fun handleNewInclusionModel(model: InclusionModel, onInclusionUpdate: suspend (Set<Any>) -> Unit): Nothing {
     coroutineScope {
       val listener = object : InclusionListener {
         override fun inclusionChanged() {
-          val newInclusion = newModel.getInclusion().map { InclusionDto.toDto(it) }
+          val newInclusion = model.getInclusion()
           LOG.trace { "Inclusion changed - ${newInclusion.size} items" }
-          launch {
-            channel.send(BackendChangesViewEvent.InclusionChanged(newInclusion))
-          }
+          launch { onInclusionUpdate(newInclusion) }
         }
       }
-      newModel.addInclusionListener(listener)
-      channel.send(BackendChangesViewEvent.InclusionChanged(newModel.getInclusion().map { InclusionDto.toDto(it) }))
+      model.addInclusionListener(listener)
+      onInclusionUpdate(model.getInclusion())
       LOG.trace { "Initial value sent" }
       try {
         awaitCancellation()
       }
       finally {
-        newModel.removeInclusionListener(listener)
+        model.removeInclusionListener(listener)
       }
     }
   }

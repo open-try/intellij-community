@@ -1,4 +1,4 @@
-// Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
+// Copyright 2000-2026 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 
 package org.jetbrains.kotlin.idea.quickfix;
 
@@ -3487,6 +3487,21 @@ public abstract class K1QuickFixTestGenerated extends AbstractK1QuickFixTest {
             runTest("testData/quickfix/changeSignature/addFunctionParameterWithAnonymousFunction.kt");
         }
 
+        @TestMetadata("addFunctionParameterWithAnonymousObjectExtendingClass.kt")
+        public void testAddFunctionParameterWithAnonymousObjectExtendingClass() throws Exception {
+            runTest("testData/quickfix/changeSignature/addFunctionParameterWithAnonymousObjectExtendingClass.kt");
+        }
+
+        @TestMetadata("addFunctionParameterWithAnonymousObjectMultipleSupertypes.kt")
+        public void testAddFunctionParameterWithAnonymousObjectMultipleSupertypes() throws Exception {
+            runTest("testData/quickfix/changeSignature/addFunctionParameterWithAnonymousObjectMultipleSupertypes.kt");
+        }
+
+        @TestMetadata("addFunctionParameterWithAnonymousObjectViaThis.kt")
+        public void testAddFunctionParameterWithAnonymousObjectViaThis() throws Exception {
+            runTest("testData/quickfix/changeSignature/addFunctionParameterWithAnonymousObjectViaThis.kt");
+        }
+
         @TestMetadata("addFunctionParameterWithFunctionReference.kt")
         public void testAddFunctionParameterWithFunctionReference() throws Exception {
             runTest("testData/quickfix/changeSignature/addFunctionParameterWithFunctionReference.kt");
@@ -3565,6 +3580,11 @@ public abstract class K1QuickFixTestGenerated extends AbstractK1QuickFixTest {
         @TestMetadata("changeFunctionLiteralParameters4.kt")
         public void testChangeFunctionLiteralParameters4() throws Exception {
             runTest("testData/quickfix/changeSignature/changeFunctionLiteralParameters4.kt");
+        }
+
+        @TestMetadata("changeFunctionParameterWithAnonymousObject.kt")
+        public void testChangeFunctionParameterWithAnonymousObject() throws Exception {
+            runTest("testData/quickfix/changeSignature/changeFunctionParameterWithAnonymousObject.kt");
         }
 
         @TestMetadata("changeFunctionReturnTypeToNothing.kt")
@@ -5476,6 +5496,11 @@ public abstract class K1QuickFixTestGenerated extends AbstractK1QuickFixTest {
                     public void testOtherExplicitReceiver() throws Exception {
                         runTest("testData/quickfix/createFromUsage/createFunction/call/abstract/otherExplicitReceiver.kt");
                     }
+
+                    @TestMetadata("thisInAnonymousObject.kt")
+                    public void testThisInAnonymousObject() throws Exception {
+                        runTest("testData/quickfix/createFromUsage/createFunction/call/abstract/thisInAnonymousObject.kt");
+                    }
                 }
 
                 @RunWith(JUnit3RunnerWithInners.class)
@@ -5539,6 +5564,16 @@ public abstract class K1QuickFixTestGenerated extends AbstractK1QuickFixTest {
                     @TestMetadata("extensionFunOnInterface.kt")
                     public void testExtensionFunOnInterface() throws Exception {
                         runTest("testData/quickfix/createFromUsage/createFunction/call/extension/extensionFunOnInterface.kt");
+                    }
+
+                    @TestMetadata("extensionFunOnInterfaceThisInAnonymousObject.kt")
+                    public void testExtensionFunOnInterfaceThisInAnonymousObject() throws Exception {
+                        runTest("testData/quickfix/createFromUsage/createFunction/call/extension/extensionFunOnInterfaceThisInAnonymousObject.kt");
+                    }
+
+                    @TestMetadata("extensionFunOnObjectThisInAnonymousObject.kt")
+                    public void testExtensionFunOnObjectThisInAnonymousObject() throws Exception {
+                        runTest("testData/quickfix/createFromUsage/createFunction/call/extension/extensionFunOnObjectThisInAnonymousObject.kt");
                     }
 
                     @TestMetadata("extensionOfInt.kt")
@@ -5799,6 +5834,11 @@ public abstract class K1QuickFixTestGenerated extends AbstractK1QuickFixTest {
                         runTest("testData/quickfix/createFromUsage/createFunction/call/member/stripPrefix.kt");
                     }
 
+                    @TestMetadata("thisInAnonymousObject.kt")
+                    public void testThisInAnonymousObject() throws Exception {
+                        runTest("testData/quickfix/createFromUsage/createFunction/call/member/thisInAnonymousObject.kt");
+                    }
+
                     @TestMetadata("thisInClass.kt")
                     public void testThisInClass() throws Exception {
                         runTest("testData/quickfix/createFromUsage/createFunction/call/member/thisInClass.kt");
@@ -5841,6 +5881,21 @@ public abstract class K1QuickFixTestGenerated extends AbstractK1QuickFixTest {
 
                     private void runTest(String testDataFilePath) throws Exception {
                         KotlinTestUtils.runTest(this::doTest, this, testDataFilePath);
+                    }
+
+                    @TestMetadata("anonymousObject.kt")
+                    public void testAnonymousObject() throws Exception {
+                        runTest("testData/quickfix/createFromUsage/createFunction/call/simple/anonymousObject.kt");
+                    }
+
+                    @TestMetadata("anonymousObjectExtendingClass.kt")
+                    public void testAnonymousObjectExtendingClass() throws Exception {
+                        runTest("testData/quickfix/createFromUsage/createFunction/call/simple/anonymousObjectExtendingClass.kt");
+                    }
+
+                    @TestMetadata("anonymousObjectViaThis.kt")
+                    public void testAnonymousObjectViaThis() throws Exception {
+                        runTest("testData/quickfix/createFromUsage/createFunction/call/simple/anonymousObjectViaThis.kt");
                     }
 
                     @TestMetadata("argumentTypeMismatch.kt")
@@ -13124,6 +13179,16 @@ public abstract class K1QuickFixTestGenerated extends AbstractK1QuickFixTest {
                 runTest("testData/quickfix/optIn/appendFileAnnotationWithAnnotationList.kt");
             }
 
+            @TestMetadata("argumentUseSiteOptIn.kt")
+            public void testArgumentUseSiteOptIn() throws Exception {
+                runTest("testData/quickfix/optIn/argumentUseSiteOptIn.kt");
+            }
+
+            @TestMetadata("assignmentUseSiteOptIn.kt")
+            public void testAssignmentUseSiteOptIn() throws Exception {
+                runTest("testData/quickfix/optIn/assignmentUseSiteOptIn.kt");
+            }
+
             @TestMetadata("basicFunction.kt")
             public void testBasicFunction() throws Exception {
                 runTest("testData/quickfix/optIn/basicFunction.kt");
@@ -13157,6 +13222,11 @@ public abstract class K1QuickFixTestGenerated extends AbstractK1QuickFixTest {
             @TestMetadata("existingFileAnnotationWithPackage.kt")
             public void testExistingFileAnnotationWithPackage() throws Exception {
                 runTest("testData/quickfix/optIn/existingFileAnnotationWithPackage.kt");
+            }
+
+            @TestMetadata("expressionUseSiteOptIn.kt")
+            public void testExpressionUseSiteOptIn() throws Exception {
+                runTest("testData/quickfix/optIn/expressionUseSiteOptIn.kt");
             }
 
             @TestMetadata("forbiddenTargetsExpression.kt")

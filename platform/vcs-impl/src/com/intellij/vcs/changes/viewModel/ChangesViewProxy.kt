@@ -14,6 +14,7 @@ import com.intellij.platform.vcs.impl.shared.RdLocalChanges
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.SharedFlow
+import org.jetbrains.annotations.ApiStatus
 import javax.swing.JComponent
 
 /**
@@ -23,7 +24,8 @@ import javax.swing.JComponent
  * In split mode it contains a placeholder produced via [ChangesViewSplitComponentBinding].
  */
 // TODO IJPL-173924 cleanup methods returning tree/component
-internal abstract class ChangesViewProxy(val project: Project, val scope: CoroutineScope) : Disposable {
+@ApiStatus.Internal
+abstract class ChangesViewProxy(val project: Project, val scope: CoroutineScope) : Disposable {
   abstract val inclusionChanged: SharedFlow<Unit>
 
   abstract val diffRequests: SharedFlow<Pair<ChangesViewDiffAction, ClientId>>
@@ -36,7 +38,6 @@ internal abstract class ChangesViewProxy(val project: Project, val scope: Corout
   abstract fun initPanel()
 
   abstract fun setToolbarHorizontal(horizontal: Boolean)
-  abstract fun isModelUpdateInProgress(): Boolean
 
   abstract fun scheduleRefreshNow(callback: Runnable?)
   abstract fun scheduleDelayedRefresh()

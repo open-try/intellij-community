@@ -1,4 +1,4 @@
-// Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
+// Copyright 2000-2026 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.openapi.command.impl;
 
 import com.intellij.openapi.command.CommandProcessor;
@@ -64,7 +64,10 @@ public final class CommandMerger {
     return false;
   }
 
-  @Nullable UndoCommandFlushReason shouldFlush(@NotNull PerformedCommand performedCommand) {
+  @Nullable CommandMergerFlushReason shouldFlush(@NotNull PerformedCommand performedCommand) {
+    if (isPartialForeignCommand(performedCommand)) {
+      return null;
+    }
     //noinspection ConstantValue
     if (!isCompatible(performedCommand.commandId())) {
       return createFlushReason("INCOMPATIBLE_COMMAND", performedCommand);
@@ -94,15 +97,16 @@ public final class CommandMerger {
     return canMergeGroup ? null : createFlushReason("CHANGED_GROUP", performedCommand);
   }
 
-  @Nullable UndoableGroup formGroup(@NotNull UndoCommandFlushReason flushReason, int commandTimestamp) {
+  @Nullable UndoableGroup formGroup(@NotNull CommandMergerFlushReason flushReason, int commandTimestamp) {
     UndoableGroup group = !hasActions() ? null : createUndoableGroup(flushReason, commandTimestamp);
     reset();
     return group;
   }
 
   void mergeWithPerformedCommand(@NotNull PerformedCommand performedCommand) {
+    boolean isPartial = isPartialForeignCommand(performedCommand);
     mergeState(performedCommand);
-    if (!performedCommand.isTransparent() && hasActions()) {
+    if (!performedCommand.isTransparent() && (hasActions() || isPartial)) {
       Object groupId = performedCommand.groupId();
       if (groupId != SoftReference.dereference(lastGroupId)) {
         lastGroupId = groupId == null ? null : new WeakReference<>(groupId);
@@ -180,6 +184,10 @@ public final class CommandMerger {
 
   @Nullable String getCommandName() {
     return commandName;
+  }
+
+  @Nullable Object getLastGroupId() {
+    return SoftReference.dereference(lastGroupId);
   }
 
   boolean isGlobal() {
@@ -287,21 +295,18 @@ public final class CommandMerger {
     mergeConfirmationPolicy(performedCommand.confirmationPolicy());
   }
 
-  private @NotNull UndoCommandFlushReason createFlushReason(@NotNull String reason, @NotNull PerformedCommand performedCommand) {
-    return UndoCommandFlushReason.cannotMergeCommands(
+  private @NotNull CommandMergerFlushReason createFlushReason(@NotNull String reason, @NotNull PerformedCommand performedCommand) {
+    return CommandMergerFlushReason.cannotMergeCommands(
       reason,
       commandName,
-      SoftReference.dereference(lastGroupId),
+      lastGroupId,
       isTransparent(),
       isForcedGlobal,
-      null,
-      performedCommand.groupId(),
-      performedCommand.isTransparent(),
-      performedCommand.isGlobal()
+      performedCommand
     );
   }
 
-  private @NotNull UndoableGroup createUndoableGroup(@NotNull UndoCommandFlushReason flushReason, int commandTimestamp) {
+  private @NotNull UndoableGroup createUndoableGroup(@NotNull CommandMergerFlushReason flushReason, int commandTimestamp) {
     if (additionalAffectedDocuments.size() > 0) {
       DocumentReference[] refs = additionalAffectedDocuments.asCollection().toArray(DocumentReference.EMPTY_ARRAY);
       undoableActions.add(new MyEmptyUndoableAction(refs));
@@ -386,6 +391,10 @@ public final class CommandMerger {
       return true;
     }
     return commandIds.getFirst().isCompatible(commandId);
+  }
+
+  private boolean isPartialForeignCommand(@NotNull PerformedCommand performedCommand) {
+    return performedCommand.isForeign() && !commandIds.isEmpty() && commandIds.getLast().equals(performedCommand.commandId());
   }
 
   private static boolean isMergeGlobalCommandsAllowed() {

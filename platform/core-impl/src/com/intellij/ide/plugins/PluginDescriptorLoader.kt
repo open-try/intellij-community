@@ -408,6 +408,25 @@ private fun CoroutineScope.loadDescriptorsFromProperty(loadingContext: PluginDes
   return async { DiscoveredPluginsList(list.awaitAllNotNull(), PluginsSourceContext.SystemPropertyProvided) }
 }
 
+private fun CoroutineScope.loadThirdPartyBundledPluginDescriptors(loadingContext: PluginDescriptorLoadingContext, pool: ZipEntryResolverPool): Deferred<DiscoveredPluginsList?> {
+  if (System.getProperty("intellij.platform.allow.third.party.bundled.plugins", "true") != "true") {
+    return CompletableDeferred(value = null)
+  }
+  val thirdPartyBundledPluginsPath = PathManager.getHomeDir().resolve("third-party-plugins")
+  if (!Files.exists(thirdPartyBundledPluginsPath)) {
+    return CompletableDeferred(value = null)
+  }
+  return async(Dispatchers.IO) {
+    val list = mutableListOf<Deferred<PluginMainDescriptor?>>()
+    Files.newDirectoryStream(thirdPartyBundledPluginsPath).forEach { pluginPath ->
+      list.add(async(Dispatchers.IO) {
+        loadDescriptorFromFileOrDir(pluginPath, loadingContext, pool, isBundled = true)
+      })
+    }
+    return@async DiscoveredPluginsList(list.awaitAllNotNull(), PluginsSourceContext.Bundled)
+  }
+}
+
 suspend fun loadDescriptors(
   zipPoolDeferred: Deferred<ZipEntryResolverPool>,
   mainClassLoaderDeferred: Deferred<ClassLoader>?,
@@ -444,16 +463,15 @@ internal fun CoroutineScope.scheduleLoading(
   }
   val pluginSetDeferred = async {
     val (loadingContext, discoveredPlugins) = resultDeferred.await()
-    val loadingResult = PluginLoadingResult()
-    loadingResult.initAndAddAll(descriptorLoadingResult = discoveredPlugins, initContext = initContext)
-    val pluginSet = PluginManagerCore.initializeAndSetPlugins(
+    val pluginsState = PluginManagerCore.initializeAndSetPlugins(
       descriptorLoadingErrors = loadingContext.copyDescriptorLoadingErrors(),
       initContext = initContext,
-      loadingResult = loadingResult,
+      discoveredPlugins = discoveredPlugins,
     )
+    val pluginSet = pluginsState.pluginSet
     this@scheduleLoading.launch {
       // logging is not as a part of a plugin set job for performance reasons
-      logPlugins(plugins = pluginSet.allPlugins, initContext = initContext, loadingResult = loadingResult, logSupplier = {
+      logPlugins(plugins = pluginSet.allPlugins, initContext = initContext, incompletePlugins = pluginsState.incompletePluginsForLogging, logSupplier = {
         // make sure that logger is ready to use (not a console logger)
         logDeferred?.await()
         LOG
@@ -467,7 +485,7 @@ internal fun CoroutineScope.scheduleLoading(
 private suspend fun logPlugins(
   plugins: Collection<IdeaPluginDescriptorImpl>,
   initContext: PluginInitializationContext,
-  loadingResult: PluginLoadingResult,
+  incompletePlugins: List<PluginMainDescriptor>,
   logSupplier: suspend () -> Logger,
 ) {
   if (AppMode.isDisableNonBundledPlugins()) {
@@ -497,7 +515,8 @@ private suspend fun logPlugins(
     appendPlugin(descriptor, target)
   }
 
-  for ((pluginId, descriptor) in loadingResult.getIncompleteIdMap()) {
+  for (descriptor in incompletePlugins) {
+    val pluginId = descriptor.pluginId
     // log only explicitly disabled plugins
     if (initContext.isPluginDisabled(pluginId) && !disabledPlugins.contains(pluginId)) {
       appendPlugin(descriptor, disabled)
@@ -535,7 +554,7 @@ private suspend fun loadDescriptors(
 ): PluginDescriptorLoadingResult {
   val zipPool = zipPoolDeferred.await()
   val mainClassLoader = mainClassLoaderDeferred?.await() ?: PluginManagerCore::class.java.classLoader
-  val (plugins, pluginsFromProperty) = coroutineScope {
+  val discoveredPlugins = coroutineScope {
     val pluginsDeferred = ProductLoadingStrategy.strategy.loadPluginDescriptors(
       scope = this,
       loadingContext = loadingContext,
@@ -547,10 +566,10 @@ private suspend fun loadDescriptors(
       zipPool = zipPool,
       mainClassLoader = mainClassLoader,
     )
+    val thirdPartyBundledPluginsDeferred = loadThirdPartyBundledPluginDescriptors(loadingContext, zipPool)
     val pluginsFromPropertyDeferred = loadDescriptorsFromProperty(loadingContext, zipPool)
-    pluginsDeferred.await() to pluginsFromPropertyDeferred.await()
+    pluginsDeferred.await() + listOfNotNull(thirdPartyBundledPluginsDeferred.await(), pluginsFromPropertyDeferred.await())
   }
-  val discoveredPlugins = if (pluginsFromProperty == null) { plugins } else { plugins + pluginsFromProperty }
   return PluginDescriptorLoadingResult.build(discoveredPlugins)
 }
 
@@ -854,8 +873,7 @@ fun isProductWithTheOnlyDescriptor(platformPrefix: String): Boolean {
          platformPrefix == PlatformUtils.DBE_PREFIX ||
          platformPrefix == PlatformUtils.DATASPELL_PREFIX ||
          platformPrefix == PlatformUtils.GATEWAY_PREFIX ||
-         platformPrefix == "CodeServer" ||
-         platformPrefix == PlatformUtils.GIT_CLIENT_PREFIX
+         platformPrefix == "CodeServer"
 }
 
 internal fun getResourceReader(path: String, classLoader: ClassLoader): XMLStreamReader2? {

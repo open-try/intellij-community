@@ -78,6 +78,9 @@ jvm_library(
     "//platform/util/coroutines",
     "//platform/execution",
     "//platform/forms_rt:java-guiForms-rt",
+    "//libraries/jspecify",
+    "//plugins/repository-search",
+    "//platform/util/text-matching",
   ],
   exports = [
     "//platform/external-system-api:externalSystem",
@@ -109,7 +112,19 @@ resourcegroup(
 jvm_library(
   name = "gradle-tests",
   visibility = ["//visibility:public"],
-  srcs = glob([], allow_empty = True)
+  srcs = glob([], allow_empty = True),
+  exports = ["//platform/external-system-api/testFramework"],
+  runtime_deps = [
+    "//platform/backend/workspace",
+    "//platform/external-system-api/dependency-updater",
+    "//platform/observable",
+    "//platform/core-ui",
+    "//platform/execution.dashboard",
+    "//libraries/gson",
+    "//libraries/guava",
+    "//platform/forms_rt:java-guiForms-rt",
+    "//plugins/repository-search",
+  ]
 )
 
 jvm_library(
@@ -181,9 +196,11 @@ jvm_library(
     "//platform/forms_rt:java-guiForms-rt",
     "//java/testFramework/backend",
     "@lib//:junit5Pioneer",
+    "//plugins/repository-search",
+    "//plugins/repository-search:repository-search_test_lib",
   ],
   exports = ["//platform/external-system-api/testFramework"],
-  runtime_deps = ["//platform/execution.dashboard"]
+  runtime_deps = [":gradle-tests"]
 )
 ### auto-generated section `build intellij.gradle.tests` end
 

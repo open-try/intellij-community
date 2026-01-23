@@ -3,7 +3,10 @@ package com.intellij.polySymbols.customElements.impl
 
 import com.intellij.model.Pointer
 import com.intellij.openapi.util.UserDataHolderBase
-import com.intellij.polySymbols.*
+import com.intellij.polySymbols.PolySymbol
+import com.intellij.polySymbols.PolySymbolApiStatus
+import com.intellij.polySymbols.PolySymbolKind
+import com.intellij.polySymbols.PolySymbolQualifiedName
 import com.intellij.polySymbols.completion.PolySymbolCodeCompletionItem
 import com.intellij.polySymbols.customElements.CustomElementsJsonOrigin
 import com.intellij.polySymbols.customElements.CustomElementsManifestScopeBase
@@ -11,6 +14,7 @@ import com.intellij.polySymbols.customElements.CustomElementsSymbol
 import com.intellij.polySymbols.customElements.json.CustomElementClassOrMixinDeclaration
 import com.intellij.polySymbols.customElements.json.resolve
 import com.intellij.polySymbols.customElements.json.toApiStatus
+import com.intellij.polySymbols.framework.FrameworkId
 import com.intellij.polySymbols.impl.StaticPolySymbolScopeBase
 import com.intellij.polySymbols.patterns.PolySymbolPattern
 import com.intellij.polySymbols.query.*
@@ -26,7 +30,7 @@ class CustomElementsClassOrMixinDeclarationAdapter private constructor(
 
   private val cacheHolder = UserDataHolderBase()
 
-  override val qualifiedKind: PolySymbolQualifiedKind
+  override val kind: PolySymbolKind
     get() = CustomElementsSymbol.CEM_DECLARATIONS
 
   override val pattern: PolySymbolPattern?
@@ -70,8 +74,8 @@ class CustomElementsClassOrMixinDeclarationAdapter private constructor(
     override val origin: CustomElementsJsonOrigin
       get() = base.origin
 
-    override val qualifiedKind: PolySymbolQualifiedKind
-      get() = base.qualifiedKind
+    override val kind: PolySymbolKind
+      get() = base.kind
 
     override val name: String
       get() = base.name
@@ -115,12 +119,12 @@ class CustomElementsClassOrMixinDeclarationAdapter private constructor(
         .toList()
 
     override fun getSymbols(
-      qualifiedKind: PolySymbolQualifiedKind,
+      kind: PolySymbolKind,
       params: PolySymbolListSymbolsQueryParams,
       stack: PolySymbolQueryStack,
     ): List<PolySymbol> =
       base.rootScope
-        .getSymbols(base.declaration, this.origin, qualifiedKind, params)
+        .getSymbols(base.declaration, this.origin, kind, params)
         .toList()
 
     override fun getCodeCompletions(

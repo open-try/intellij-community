@@ -52,7 +52,6 @@ import org.jetbrains.annotations.Nls
 import org.jetbrains.annotations.NonNls
 import java.awt.Component
 import java.nio.file.InvalidPathException
-import javax.swing.JComponent
 import javax.swing.JList
 import javax.swing.JTextField
 import javax.swing.plaf.basic.BasicComboBoxEditor
@@ -299,7 +298,6 @@ internal fun <P : PathHolder> Panel.pythonInterpreterComboBox(
       cell(comboBox)
         .bindItem(selectedSdkProperty)
         .applyToComponent {
-          preferredSize = JBUI.size(preferredSize)
           isEditable = true
         }
         .validationRequestor(
@@ -331,14 +329,16 @@ internal class PythonInterpreterComboBox<P : PathHolder>(
 
   init {
     renderer = PythonSdkComboBoxListCellRenderer { isLoading.get() }
+    preferredSize = JBUI.size(preferredSize)
     val newOnPathSelected: (String) -> Unit = { rawPath ->
       runWithModalProgressBlocking(ModalTaskOwner.guess(), message("python.sdk.validating.environment")) {
         val pathOnFileSystem = fileSystem.parsePath(rawPath).onFailure { error ->
           errorSink.emit(error)
         }.successOrNull
 
-        val interpreter = pathOnFileSystem?.let {
-          onPathSelected(it).onFailure { error -> errorSink.emit(error) }.successOrNull
+        val interpreter = pathOnFileSystem?.let { selectedPath ->
+          val pythonBinaryPath = fileSystem.resolvePythonBinary(selectedPath) ?: selectedPath
+          onPathSelected(pythonBinaryPath).onFailure { error -> errorSink.emit(error) }.successOrNull
         }
 
         interpreter?.let { interpreter ->
@@ -410,16 +410,6 @@ internal fun <T, C : ComboBox<T>> Cell<C>.withExtendableTextFieldEditor(): Cell<
     }
   }
 
-internal fun JComponent.displayLoaderWhen(loading: SharedFlow<Boolean>, scope: CoroutineScope) {
-  scope.launch(start = CoroutineStart.UNDISPATCHED) {
-    loading.collectLatest { currentValue ->
-      withContext(Dispatchers.EDT) {
-        if (currentValue) displayLoader() else hideLoader()
-      }
-    }
-  }
-}
-
 private fun ComboBox<*>.displayLoader(makeTemporaryEditable: Boolean) {
   if (makeTemporaryEditable) {
     isEditable = true
@@ -434,14 +424,6 @@ private fun ComboBox<*>.hideLoader(restoreNonEditableState: Boolean) {
   }
   isEnabled = true
   (editor.editorComponent as? ExtendableTextComponent)?.removeLoadingExtension()
-}
-
-private fun JComponent.displayLoader() {
-  isEnabled = false
-}
-
-private fun JComponent.hideLoader() {
-  isEnabled = true
 }
 
 private val loaderExtension = ExtendableTextComponent.Extension.create(AnimatedIcon.Default.INSTANCE, null, null)

@@ -39,6 +39,7 @@ import com.intellij.platform.eel.EelDescriptor;
 import com.intellij.platform.eel.provider.EelProviderUtil;
 import com.intellij.platform.eel.provider.LocalEelDescriptor;
 import com.intellij.pom.java.JavaRelease;
+import com.intellij.util.BazelEnvironmentUtil;
 import com.intellij.util.PathUtil;
 import com.intellij.util.concurrency.AppExecutorUtil;
 import com.intellij.util.containers.ContainerUtil;
@@ -425,6 +426,17 @@ public final class JavaSdkImpl extends JavaSdk {
       String url = "jar://" + annotationsJarPathString + "!/";
       root = refresh ? vfm.refreshAndFindFileByUrl(url) : vfm.findFileByUrl(url);
       pathsChecked.add(annotationsJarPathString);
+      // if java is modularized,
+      // javaPluginClassesRootPath is "lib/modules", let's try to check "/lib"
+      if (root == null &&
+          javaPluginClassesRootPath.getParent() != null) {
+        Path parentJavaPluginClassesRootPath = javaPluginClassesRootPath.getParent();
+        Path parentAnnotationsJarPath = parentJavaPluginClassesRootPath.resolveSibling(pathInResources);
+        String parentAnnotationsJarPathString = FileUtil.toSystemIndependentName(parentAnnotationsJarPath.toString());
+        String urlParent = "jar://" + parentAnnotationsJarPathString + "!/";
+        root = refresh ? vfm.refreshAndFindFileByUrl(urlParent) : vfm.findFileByUrl(urlParent);
+        pathsChecked.add(parentAnnotationsJarPathString);
+      }
     }
     else {
       // when run against IDEA plugin JDK, something like this comes up: "$IDEA_HOME$/out/classes/production/intellij.java.impl"
@@ -452,9 +464,7 @@ public final class JavaSdkImpl extends JavaSdk {
       pathsChecked.add(path);
     }
     if (root == null) {
-      // Bazel-provided test dependencies, from runfiles tree
-      String testSrcDir = System.getenv("TEST_SRCDIR");
-      if (testSrcDir != null && !testSrcDir.isBlank()) {
+      if (BazelEnvironmentUtil.isBazelTestRun()) {
         ServiceLoader<TestJdkAnnotationsFilesProvider> providerClasses = ServiceLoader.load(TestJdkAnnotationsFilesProvider.class);
         var iterator = providerClasses.iterator();
         if (!iterator.hasNext()) {

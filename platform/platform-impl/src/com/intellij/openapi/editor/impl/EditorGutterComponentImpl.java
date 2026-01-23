@@ -187,7 +187,7 @@ final class EditorGutterComponentImpl extends EditorGutterComponentEx
   private boolean myHasInlaysWithGutterIcons;
   private int myStartIconAreaWidth = ExperimentalUI.isNewUI() ? 0 : START_ICON_AREA_WIDTH.get();
   private int myIconsAreaWidth;
-  int myLineNumberAreaWidth = getInitialLineNumberWidth();
+  int myLineNumberAreaWidth = getInitialLineNumberWidth(false);
   int myAdditionalLineNumberAreaWidth;
   private @NotNull List<FoldRegion> myActiveFoldRegions = Collections.emptyList();
   int myTextAnnotationGuttersSize;
@@ -1853,7 +1853,7 @@ final class EditorGutterComponentImpl extends EditorGutterComponentEx
     }
     if (ExperimentalUI.isNewUI() && isRealEditor()) {
       //todo[kb] recalculate gutters renderers and return 0 if there are none in EditorMouseEventArea.LINE_NUMBERS_AREA
-      return JBUI.scale(14);
+      return scaleWithEditor(14);
     }
     return 0;
   }
@@ -2360,14 +2360,18 @@ final class EditorGutterComponentImpl extends EditorGutterComponentEx
 
   private boolean isDumbMode() {
     Project project = myEditor.getProject();
-    return project != null && !project.isDisposed() && DumbService.isDumb(project);
+    if (project == null || project.isDisposed()) {
+      return true;
+    }
+    return DumbService.isDumb(project);
   }
 
   private boolean checkDumbAware(@NotNull Object possiblyDumbAware) {
     Project project = myEditor.getProject();
-    return project == null
-           ? DumbService.isDumbAware(possiblyDumbAware)
-           : DumbService.getInstance(project).isUsableInCurrentContext(possiblyDumbAware);
+    if (project == null || project.isDisposed()) {
+      return DumbService.isDumbAware(possiblyDumbAware);
+    }
+    return DumbService.getInstance(project).isUsableInCurrentContext(possiblyDumbAware);
   }
 
   private void notifyNotDumbAware() {
@@ -2879,10 +2883,19 @@ final class EditorGutterComponentImpl extends EditorGutterComponentEx
     }
   }
 
-  private static int getInitialLineNumberWidth() {
+  private int getInitialLineNumberWidth() {
+    return getInitialLineNumberWidth(true);
+  }
+
+  private int getInitialLineNumberWidth(boolean applyEditorScale) {
     if (ExperimentalUI.isNewUI()) {
       //have a placeholder for breakpoints
-      return JBUI.scale(12);
+      int baseWidth = 12;
+      if (applyEditorScale) {
+        return scaleWithEditor(baseWidth);
+      } else {
+        return JBUI.scale(baseWidth);
+      }
     }
     return 0;
   }

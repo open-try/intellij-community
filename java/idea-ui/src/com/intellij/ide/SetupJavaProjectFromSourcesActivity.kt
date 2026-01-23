@@ -12,6 +12,7 @@ import com.intellij.ide.util.importProject.LibrariesDetectionStep
 import com.intellij.ide.util.importProject.RootDetectionProcessor
 import com.intellij.ide.util.projectWizard.WizardContext
 import com.intellij.ide.util.projectWizard.importSources.impl.ProjectFromSourcesBuilderImpl
+import com.intellij.java.JavaPluginDisposable
 import com.intellij.notification.*
 import com.intellij.notification.impl.NotificationIdsHolder
 import com.intellij.openapi.application.ApplicationManager
@@ -54,7 +55,7 @@ private val NOTIFICATION_GROUP: NotificationGroup
 private const val SCAN_DEPTH_LIMIT = 5
 private const val MAX_ROOTS_IN_TRIVIAL_PROJECT_STRUCTURE = 3
 
-private class SetupJavaProjectFromSourcesActivity : ProjectActivity {
+internal class SetupJavaProjectFromSourcesActivity : ProjectActivity {
   init {
     if (ApplicationManager.getApplication().isHeadlessEnvironment) {
       throw ExtensionNotApplicableException.create()
@@ -188,7 +189,7 @@ private fun filesToLinks(files: MutableCollection<VirtualFile>, projectDirectory
 }
 
 private suspend fun setupFromSources(project: Project, projectDir: VirtualFile) {
-  val builder = ProjectFromSourcesBuilderImpl(WizardContext(project, project), ModulesProvider.EMPTY_MODULES_PROVIDER)
+  val builder = ProjectFromSourcesBuilderImpl(WizardContext(project, JavaPluginDisposable.getInstance(project)), ModulesProvider.EMPTY_MODULES_PROVIDER)
   val projectPath = projectDir.path
   builder.baseProjectPath = projectPath
   val roots = RootDetectionProcessor.detectRoots(File(projectPath))

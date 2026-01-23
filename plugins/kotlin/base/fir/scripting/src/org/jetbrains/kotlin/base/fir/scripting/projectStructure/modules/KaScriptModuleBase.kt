@@ -3,6 +3,7 @@ package org.jetbrains.kotlin.base.fir.scripting.projectStructure.modules
 
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.VirtualFile
+import com.intellij.platform.backend.workspace.toVirtualFileUrl
 import com.intellij.platform.backend.workspace.workspaceModel
 import com.intellij.platform.workspace.storage.ImmutableEntityStorage
 import com.intellij.platform.workspace.storage.url.VirtualFileUrlManager
@@ -11,6 +12,7 @@ import org.jetbrains.kotlin.analysis.api.platform.projectStructure.KaModuleBase
 import org.jetbrains.kotlin.analysis.api.projectStructure.KaModule
 import org.jetbrains.kotlin.analysis.api.projectStructure.KaScriptModule
 import org.jetbrains.kotlin.config.LanguageVersionSettings
+import org.jetbrains.kotlin.idea.core.script.k2.modules.KotlinScriptEntity
 import org.jetbrains.kotlin.idea.core.script.v1.KotlinScriptSearchScope
 import org.jetbrains.kotlin.idea.core.script.v1.getLanguageVersionSettings
 import org.jetbrains.kotlin.idea.core.script.v1.getPlatform
@@ -22,13 +24,14 @@ import java.util.*
 
 abstract class KaScriptModuleBase(
     override val project: Project,
-    open val virtualFile: VirtualFile,
+    protected open val virtualFile: VirtualFile,
 ) : KaScriptModule, KaModuleBase() {
+    protected open val snapshot: ImmutableEntityStorage by lazy(LazyThreadSafetyMode.PUBLICATION) {
+        project.workspaceModel.currentSnapshot
+    }
+
     protected val virtualFileUrlManager: VirtualFileUrlManager
         get() = project.workspaceModel.getVirtualFileUrlManager()
-
-    protected val currentSnapshot: ImmutableEntityStorage
-        get() = project.workspaceModel.currentSnapshot
 
     private val scriptDefinition: ScriptDefinition by lazy {
         findScriptDefinition(project, KtFileScriptSource(file))

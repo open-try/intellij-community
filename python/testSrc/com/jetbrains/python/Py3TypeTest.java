@@ -902,6 +902,22 @@ public class Py3TypeTest extends PyTestCase {
              if ((v := input()) == "abba"):
                  expr = v
              """);
+
+    // PY-83625
+    doTest("Literal[\"b\"]",
+           """
+             from typing import Literal
+             def foo(v: Literal["a", "b"], w: Literal["b", "c"]):
+                 if (v == w):
+                     expr = v
+             """);
+    doTest("Literal[\"a\", \"b\"]",
+           """
+             from typing import Literal
+             def foo(v: Literal["a", "b"], w: Literal["b", "c"]):
+                 if (v != w):
+                     expr = v
+             """);
   }
 
   public void testLiteralTypeNarrowingIn() {
@@ -966,6 +982,66 @@ public class Py3TypeTest extends PyTestCase {
              from typing import Literal
              if (a := input()) in ("abba", False):
                  expr = a
+             """);
+    
+    // PY-83625
+    doTest("Literal[\"b\", \"c\"]",
+           """
+             from typing import Literal
+             def foo(v: Literal["a", "b", "c"], u: Literal["b"], w: Literal["b", "c"]):
+                 if v in (u, w):
+                     expr = v
+             """);
+    doTest("Literal[\"a\", \"c\"]",
+           """
+             from typing import Literal
+             def foo(v: Literal["a", "b", "c"], u: Literal["b"], w: Literal["b", "c"]):
+                 if v not in (u, w):
+                     expr = v
+             """);
+  }
+
+  // PY-83625
+  public void testNotNarrowingInForRegularClasses() {
+    // Narrowing does not and should not work on non-Literals, because __eq__ can be overriden
+    doTest("A", """
+            class A: pass
+      
+            class B(A): pass
+            class C(A): pass
+      
+            def test(x: A, y: B, z: C):
+                if x in [y, z]:
+                    expr = x
+      """);
+
+    doTest("A", """
+            class A: pass
+      
+            class B(A): pass
+            class C(A): pass
+      
+            def test(x: A, y: B, z: C):
+                if x not in [y, z]:
+                    expr = x
+      """);
+  }
+
+  // PY-83625
+  public void testLiteralTypeNarrowingIs() {
+    doTest("Literal[\"b\"]",
+           """
+             from typing import Literal
+             def foo(v: Literal["a", "b"], w: Literal["b", "c"]):
+                 if v is w:
+                     expr = v
+             """);
+    doTest("Literal[\"a\", \"b\"]",
+           """
+             from typing import Literal
+             def foo(v: Literal["a", "b"], w: Literal["b", "c"]):
+                 if v is not w:
+                     expr = v
              """);
   }
 
@@ -2747,7 +2823,7 @@ public class Py3TypeTest extends PyTestCase {
   }
 
   public void testTypeGuardResultIsAssignedButValIsReassigned() {
-    doTest("int",
+    doTest("list[object]",
            """
              from typing import List
              from typing import TypeGuard
@@ -2764,9 +2840,8 @@ public class Py3TypeTest extends PyTestCase {
              """);
   }
 
-
   public void testTypeGuardResultIsAssignedButValIsReassignedSometimes() {
-    doTest("list[str] | int",
+    doTest("list[str] | list[object]",
            """
              from typing import List
              from typing import TypeGuard
@@ -4578,6 +4653,60 @@ public class Py3TypeTest extends PyTestCase {
         """
       );
     });
+  }
+
+  // PY-85123
+  public void testGenericReturnTypeMatchInProtocol() {
+    doTest("int", """
+      from typing_extensions import reveal_type, Protocol, TypeVar
+      
+      _T_co = TypeVar("_T_co", covariant=True)
+      
+      class P(Protocol[_T_co]):
+          def f(self) -> _T_co: ...
+      
+      class C:
+          def f(self) -> int:
+              return 1
+      
+      def a[_T](p1: P[_T]) -> _T:
+          return p1.f()
+      
+      expr = a(C())
+      """);
+  }
+
+  // PY-85030
+  public void testStructuralTypesAttributeAccessAfterTypeNarrowingAndReassignmentInIf() {
+    doTest("(p: Any) -> None", """
+      def f(p):
+          if isinstance(p, int):
+              p = "foo"
+          x = p.lower()
+      expr = f
+      """);
+  }
+
+  // PY-86653
+  public void testStructuralTypeAttributeAccessAfterTypeNarrowingInMatch() {
+    doTest("(p: {attr}) -> None", """
+      def patmat(p):
+          match p:
+              case str():
+                  p.upper()
+          p.attr
+      expr = patmat
+      """);
+  }
+
+  // PY-86653
+  public void testStructuralTypeAttributeAccessAfterTypeNarrowingInConditional() {
+    doTest("(p: {attr}) -> None", """
+      def conditional(p):
+          x = p.upper() if isinstance(p, str) else "bar"
+          p.attr
+      expr = conditional
+      """);
   }
 
   private void doTest(final String expectedType, final String text) {

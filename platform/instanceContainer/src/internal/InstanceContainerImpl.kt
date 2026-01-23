@@ -5,20 +5,33 @@ import com.intellij.openapi.diagnostic.trace
 import com.intellij.platform.instanceContainer.InstanceContainer
 import com.intellij.platform.instanceContainer.InstanceNotRegisteredException
 import com.intellij.util.ArrayUtil
+import com.intellij.util.SystemProperties
 import kotlinx.collections.immutable.persistentHashMapOf
 import kotlinx.collections.immutable.persistentMapOf
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.CoroutineScope
+import org.jetbrains.annotations.VisibleForTesting
 import java.lang.invoke.MethodHandles
 import java.lang.invoke.VarHandle
 import kotlin.coroutines.CoroutineContext
 
-class InstanceContainerImpl(
+class InstanceContainerImpl @VisibleForTesting constructor(
   private val scopeHolder: ScopeHolder,
   private val containerName: String,
   private val dynamicInstanceSupport: DynamicInstanceSupport?,
   ordered: Boolean,
+  private val shouldTolerateIncorrectOverrides: Boolean,
 ) : InstanceContainer, InstanceContainerInternal, MutableInstanceContainer {
+
+  constructor(
+    scopeHolder: ScopeHolder,
+    containerName: String,
+    dynamicInstanceSupport: DynamicInstanceSupport?,
+    ordered: Boolean,
+  ) : this(scopeHolder, containerName, dynamicInstanceSupport, ordered,
+    // Use System.getProperty(), because the Registry is a service, and not available yet.
+    // Default is `true` during the migration period, then will be changed to `false`
+           shouldTolerateIncorrectOverrides = SystemProperties.getBooleanProperty("intellij.platform.instance.container.tolerate.incorrect.overrides", true))
 
   override fun toString(): String {
     val state = _state
@@ -121,7 +134,7 @@ class InstanceContainerImpl(
     }
     val debugString = if (scopeName == null) containerName else "($containerName x $scopeName)"
     LOG.trace { "$debugString : registration start" }
-    return InstanceRegistrarImpl(debugString, state().holders) { actions ->
+    return InstanceRegistrarImpl(debugString, state().holders, shouldTolerateIncorrectOverrides) { actions ->
       register(debugString, registrationScope, actions)
     }
   }

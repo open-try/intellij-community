@@ -1249,7 +1249,6 @@ public final class EditorImpl extends UserDataHolderBase implements EditorEx, Hi
     myGutterComponent.setOpaque(true);
 
     myScrollPane.setViewportView(myEditorComponent);
-    //myScrollPane.setBorder(null);
     myScrollPane.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_ALWAYS);
     myScrollPane.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED);
 
@@ -2583,7 +2582,7 @@ public final class EditorImpl extends UserDataHolderBase implements EditorEx, Hi
   }
 
   private void borderChanged() {
-    myScrollPane.setBorder(myState.getMyBorder());
+    myScrollPane.doSetBorder(myState.getMyBorder());
   }
 
   @Override
@@ -3188,6 +3187,7 @@ public final class EditorImpl extends UserDataHolderBase implements EditorEx, Hi
     }
     else {
       myCaretCursor.myIsShown = true;
+      myCaretCursor.myBlinkOpacity = 1.0f;
       myCaretCursor.repaint();
     }
   }
@@ -3203,22 +3203,6 @@ public final class EditorImpl extends UserDataHolderBase implements EditorEx, Hi
   double caretAnimationElapsed;
 
   private final @NotNull EditorCaretMoveService caretMoveService = EditorCaretMoveService.getInstance();
-
-  @ApiStatus.Internal
-  void pauseBlinking() {
-    synchronized (caretRepaintService) {
-      caretRepaintService.setEditor(this);
-      caretRepaintService.pause();
-    }
-  }
-
-  @ApiStatus.Internal
-  void resumeBlinking() {
-    synchronized (caretRepaintService) {
-      caretRepaintService.setEditor(this);
-      caretRepaintService.restart();
-    }
-  }
 
   private void setCursorPosition() {
     synchronized (caretMoveService) {
@@ -3368,6 +3352,7 @@ public final class EditorImpl extends UserDataHolderBase implements EditorEx, Hi
         caretRepaintService.setBlinking(blink);
         caretRepaintService.setBlinkPeriod(blinkPeriod);
         myIsShown = true;
+        myBlinkOpacity = 1.0f;
         caretRepaintService.restart();
       }
     }
@@ -3381,6 +3366,13 @@ public final class EditorImpl extends UserDataHolderBase implements EditorEx, Hi
     void setActive(boolean isActive) {
       synchronized (caretRepaintService) {
         myIsShown = isActive;
+      }
+    }
+
+    void setFullOpacity() {
+      synchronized (caretRepaintService) {
+        myIsShown = true;
+        myBlinkOpacity = 1.0f;
       }
     }
 
@@ -3405,6 +3397,12 @@ public final class EditorImpl extends UserDataHolderBase implements EditorEx, Hi
     long getStartTime() {
       synchronized (caretRepaintService) {
         return myStartTime;
+      }
+    }
+
+    void setStartTime(long startTime) {
+      synchronized (caretRepaintService) {
+        myStartTime = startTime;
       }
     }
 
@@ -5283,11 +5281,13 @@ public final class EditorImpl extends UserDataHolderBase implements EditorEx, Hi
 
   @DirtyUI
   private final class MyScrollPane extends JBScrollPane {
+    private final boolean myInitialized;
     private JComponent myStatusComponent;
 
     private MyScrollPane() {
       super(0);
       setupCorners();
+      myInitialized = true;
     }
 
     @Override
@@ -5405,6 +5405,20 @@ public final class EditorImpl extends UserDataHolderBase implements EditorEx, Hi
     @Override
     protected Layout createLayout() {
       return new MyScrollPaneLayout();
+    }
+
+    @Override
+    public void setBorder(Border border) {
+      if (myInitialized) {
+        EditorImpl.this.setBorder(border);
+      }
+      else {
+        doSetBorder(border);
+      }
+    }
+
+    private void doSetBorder(Border border) {
+      super.setBorder(border);
     }
   }
 

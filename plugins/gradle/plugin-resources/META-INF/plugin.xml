@@ -22,6 +22,10 @@
     <plugin id="com.intellij.modules.lang"/>
     <plugin id="com.intellij.modules.externalSystem"/>
     <module name="intellij.platform.externalSystem.impl"/>
+    <plugin id="org.jetbrains.idea.reposearch"/>
+    <!-- region Generated dependencies - run `Generate Product Layouts` to regenerate -->
+    <module name="intellij.libraries.jspecify"/>
+    <!-- endregion -->
   </dependencies>
 
   <resource-bundle>messages.GradleBundle</resource-bundle>
@@ -76,7 +80,6 @@
 
     <projectResolve implementation="org.jetbrains.plugins.gradle.service.project.BaseResolverExtension"/>
     <projectResolve implementation="org.jetbrains.plugins.gradle.service.project.CommonGradleProjectResolverExtension"/>
-    <projectResolve implementation="org.jetbrains.plugins.gradle.service.telemetry.GradleOpenTelemetryResolverExtension"/>
     <issueChecker implementation="org.jetbrains.plugins.gradle.issue.UnsupportedGradleVersionIssueChecker"/>
     <issueChecker implementation="org.jetbrains.plugins.gradle.issue.UnsupportedGradleJvmByIdeaIssueChecker"/>
     <issueChecker implementation="org.jetbrains.plugins.gradle.issue.IncompatibleGradleJvmAndGradleIssueChecker"/>
@@ -109,9 +112,18 @@
     <externalProjectDataService implementation="org.jetbrains.plugins.gradle.service.syncAction.impl.bridge.GradleBridgeProjectDataService"/>
     <externalWorkspaceDataService implementation="org.jetbrains.plugins.gradle.service.syncAction.impl.bridge.GradleBridgeModuleDataService"/>
 
+    <applicationService
+      serviceInterface="org.jetbrains.plugins.gradle.service.cache.GradleLocalRepositoryIndexer"
+      serviceImplementation="org.jetbrains.plugins.gradle.service.cache.GradleLocalRepositoryIndexerImpl"
+      testServiceImplementation="org.jetbrains.plugins.gradle.service.cache.GradleLocalRepositoryIndexerTestImpl"/>
+
     <postStartupActivity implementation="org.jetbrains.plugins.gradle.service.project.GradleStartupActivity"/>
     <backgroundPostStartupActivity implementation="org.jetbrains.plugins.gradle.service.project.GradleVersionUpdateStartupActivity"/>
     <postStartupActivity implementation="org.jetbrains.plugins.gradle.service.project.GradleHeadlessLoggingProjectActivity"/>
+    <backgroundPostStartupActivity
+      implementation="org.jetbrains.plugins.gradle.service.cache.GradleLocalRepositoryIndexerImpl$GradleLocalRepositoryIndexInitializer"/>
+    <externalSystemTaskNotificationListener
+      implementation="org.jetbrains.plugins.gradle.service.cache.GradleLocalRepositoryIndexerImpl$GradleLocalRepositoryIndexUpdater"/>
     <externalSystemUnlinkedProjectAware implementation="org.jetbrains.plugins.gradle.autolink.GradleUnlinkedProjectAware"/>
     <externalSystemSettingsListener id="gradle" implementation="org.jetbrains.plugins.gradle.startup.GradleProjectSettingsUpdater" order="before external-system"/>
     <projectOpenProcessor id="gradle" implementation="org.jetbrains.plugins.gradle.service.project.open.GradleProjectOpenProcessor"/>
@@ -158,17 +170,17 @@
     <externalSystemTaskNotificationListener
       implementation="org.jetbrains.plugins.gradle.service.GradleInstallationManager$TaskNotificationLayoutParametersCacheCleanupListener"/>
 
-    <applicationService serviceImplementation="org.jetbrains.plugins.gradle.service.GradleInstallationManager"/>
+    <applicationService serviceImplementation="org.jetbrains.plugins.gradle.service.GradleInstallationManager" open="true"/>
     <applicationService serviceInterface="org.jetbrains.plugins.gradle.service.notification.ExternalAnnotationsProgressNotificationManager"
                         serviceImplementation="org.jetbrains.plugins.gradle.service.notification.ExternalAnnotationsProgressNotificationManagerImpl"/>
 
-    <applicationService serviceImplementation="org.jetbrains.plugins.gradle.service.execution.SystemPropertiesAdjuster"/>
-    <applicationService serviceImplementation="org.jetbrains.plugins.gradle.settings.GradleSystemSettings"/>
+    <applicationService serviceImplementation="org.jetbrains.plugins.gradle.service.execution.SystemPropertiesAdjuster" open="true"/>
+    <applicationService serviceImplementation="org.jetbrains.plugins.gradle.settings.GradleSystemSettings" open="true"/>
     <applicationService serviceImplementation="org.jetbrains.plugins.gradle.jvmcompat.GradleJvmSupportMatrix"/>
     <applicationService serviceImplementation="org.jetbrains.plugins.gradle.jvmcompat.GradleCompatibilitySupportUpdater"/>
 
     <projectService serviceImplementation="org.jetbrains.plugins.gradle.settings.GradleSettingsMigration$LegacyDefaultGradleProjectSettings"/>
-    <projectService serviceImplementation="org.jetbrains.plugins.gradle.settings.GradleSettings"/>
+    <projectService serviceImplementation="org.jetbrains.plugins.gradle.settings.GradleSettings" open="true"/>
     <projectService serviceImplementation="org.jetbrains.plugins.gradle.settings.GradleExtensionsSettings"/>
     <projectService serviceImplementation="org.jetbrains.plugins.gradle.settings.GradleImportHintService"
                     configurationSchemaKey="importHint.gradle" />
@@ -251,11 +263,15 @@
                  description="Use ArtifactResolutionQuery instead of ArtifactView to resolve Javadoc/Sources"/>
     <registryKey key="gradle.auto.auto.jdk.fix.disabled" defaultValue="false"
                  description="Disable attempt to fix unknown JDK in Gradle configuration on project open"/>
+    <registryKey key="gradle.dependency.completion.service" defaultValue="true"
+                 description="Use dependency completion service for dependency completion in gradle scripts"/>
 
     <commandLineInspectionProjectConfigurator implementation="org.jetbrains.plugins.gradle.GradleCommandLineProjectConfigurator"/>
     <warmupConfigurator implementation="org.jetbrains.plugins.gradle.GradleWarmupConfigurator"/>
     <notificationGroup id="Gradle Notification Group" displayType="STICKY_BALLOON" bundle="messages.GradleBundle" key="notification.group.gradle"/>
     <statistics.notificationIdsHolder implementation="org.jetbrains.plugins.gradle.service.project.GradleNotificationIdsHolder"/>
+
+    <lookup.charFilter id="GradleCompletionCharFilter" order="first" implementation="org.jetbrains.plugins.gradle.completion.GradleCompletionCharFilter" />
 
     <!--advanced settings-->
     <advancedSetting id="gradle.run.using.gradle" default="true" bundle="messages.GradleBundle" groupKey="advanced.settings.gradle"/>
@@ -266,6 +282,10 @@
         Enable Building of models in parallel during Gradle project sync.
       </description>
     </experimentalFeature>
+  </extensions>
+
+  <extensions defaultExtensionNs="org.jetbrains.idea.reposearch">
+    <contributor implementation="org.jetbrains.plugins.gradle.completion.GradleDependencyCompletionContributor"/>
   </extensions>
 
   <applicationListeners>

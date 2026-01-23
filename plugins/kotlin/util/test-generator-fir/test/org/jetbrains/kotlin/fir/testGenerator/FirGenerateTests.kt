@@ -17,9 +17,11 @@ import org.jetbrains.kotlin.idea.base.fir.analysisApiPlatform.trackers.AbstractP
 import org.jetbrains.kotlin.idea.base.fir.projectStructure.scope.AbstractCombinedSourceAndClassRootsScopeContainsTest
 import org.jetbrains.kotlin.idea.base.fir.projectStructure.scope.AbstractCombinedSourceAndClassRootsScopeStructureTest
 import org.jetbrains.kotlin.idea.base.plugin.KotlinPluginMode
+import org.jetbrains.kotlin.idea.coverage.AbstractKotlinCoverageOutputFilesTest
 import org.jetbrains.kotlin.idea.fir.AbstractK2JsBasicCompletionLegacyStdlibTest
 import org.jetbrains.kotlin.idea.fir.actions.AbstractK2AddImportActionTest
 import org.jetbrains.kotlin.idea.fir.actions.AbstractK2BytecodeToolWindowTest
+import org.jetbrains.kotlin.idea.fir.codeInsight.AbstractK2ErrorDescriptorTest
 import org.jetbrains.kotlin.idea.fir.codeInsight.AbstractK2MultiModuleLineMarkerTest
 import org.jetbrains.kotlin.idea.fir.completion.*
 import org.jetbrains.kotlin.idea.fir.completion.kmpBasic.AbstractKotlinKmpCompletionTest
@@ -53,6 +55,8 @@ import org.jetbrains.kotlin.idea.k2.copyright.AbstractFirUpdateKotlinCopyrightTe
 import org.jetbrains.kotlin.idea.k2.refactoring.rename.AbstractFirMultiModuleRenameTest
 import org.jetbrains.kotlin.idea.k2.refactoring.rename.AbstractFirRenameTest
 import org.jetbrains.kotlin.idea.k2.refactoring.rename.AbstractK2InplaceRenameTest
+import org.jetbrains.kotlin.idea.maven.AbstractKotlinMavenInspectionTest
+import org.jetbrains.kotlin.idea.maven.configuration.AbstractMavenConfigureProjectByChangingFileTest
 import org.jetbrains.kotlin.idea.test.kmp.KMPTestPlatform
 import org.jetbrains.kotlin.j2k.k2.*
 import org.jetbrains.kotlin.parcelize.ide.test.AbstractParcelizeK2QuickFixTest
@@ -421,10 +425,30 @@ private fun assembleWorkspace(): TWorkspace = workspace(KotlinPluginMode.K2) {
             model("refactoring/rename", pattern = TEST, flatten = true)
         }
         testClass<AbstractK2InplaceRenameTest> {
-            model("refactoring/rename/inplace", pattern = KT, flatten = true)
+            model("refactoring/rename/inplace", pattern = Patterns.KT_OR_JAVA, flatten = true)
         }
         testClass<AbstractFirMultiModuleRenameTest> {
             model("refactoring/renameMultiModule", pattern = TEST, flatten = true)
+        }
+    }
+
+    testGroup("coverage/tests") {
+        testClass<AbstractKotlinCoverageOutputFilesTest> {
+            model("outputFiles")
+        }
+    }
+
+    testGroup("maven/tests") {
+        testClass<AbstractMavenConfigureProjectByChangingFileTest> {
+            model("configurator/jvm", pattern = DIRECTORY, isRecursive = false, testMethodName = "doTestWithMaven")
+        }
+
+        testClass<AbstractKotlinMavenInspectionTest> {
+            val mavenInspections = "maven-inspections"
+            val pattern = Patterns.forRegex("^([\\w\\-]+).xml$")
+            testDataRoot.resolve(mavenInspections).listFiles()!!.onEach { check(it.isDirectory) }.sorted().forEach {
+                model("$mavenInspections/${it.name}", pattern = pattern, flatten = true)
+            }
         }
     }
 
@@ -476,6 +500,10 @@ private fun assembleWorkspace(): TWorkspace = workspace(KotlinPluginMode.K2) {
     }
 
     testGroup("fir/tests", category = CODE_INSIGHT) {
+        testClass<AbstractK2ErrorDescriptorTest> {
+            model("../../../idea/tests/testData/editor/errorDescription", pattern = Patterns.forRegex("""^([^_]+)\.(kt|java)$"""))
+        }
+
         testClass<AbstractFirQuickDocTest> {
             model("../../../idea/tests/testData/editor/quickDoc", pattern = Patterns.forRegex("""^([^_]+)\.(kt|java)$"""), isRecursive = false)
             model("../../../idea/tests/testData/editor/quickDoc/misc", pattern = Patterns.forRegex("""^([^_]+)\.(kt|java)$"""), isRecursive = true, excludedDirectories = listOf("dependencies"))

@@ -41,6 +41,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.jetbrains.annotations.ApiStatus
 import org.jetbrains.annotations.Nls
+import org.jetbrains.annotations.TestOnly
 import org.jetbrains.annotations.VisibleForTesting
 import org.jetbrains.concurrency.AsyncPromise
 import org.jetbrains.idea.maven.buildtool.MavenEventHandler
@@ -182,15 +183,9 @@ class MavenDownloadSourcesRequest private constructor(
 
 open class MavenProjectsManagerEx(project: Project, private val cs: CoroutineScope) : MavenProjectsManager(project, cs) {
 
-  @ApiStatus.Internal
-  fun getProjectsTreeIfInitialized(): MavenProjectsTree? {
-    val tree = getProjectsTree(false)
-    if (tree == null) {
-      cs.launch(Dispatchers.IO) {
-        getProjectsTree(true)
-      }
-    }
-    return tree
+  @TestOnly
+  protected override fun runInBackgroundBlocking(r: Runnable) {
+    runBlocking(Dispatchers.IO) { r.run() }
   }
 
   override suspend fun addManagedFilesWithProfiles(
@@ -787,7 +782,10 @@ open class MavenProjectsManagerEx(project: Project, private val cs: CoroutineSco
     }
   }
 
-  private suspend fun doDownloadArtifacts(request: MavenDownloadSourcesRequest, progressReporter: RawProgressReporter): ArtifactDownloadResult {
+  private suspend fun doDownloadArtifacts(
+    request: MavenDownloadSourcesRequest,
+    progressReporter: RawProgressReporter,
+  ): ArtifactDownloadResult {
     project.messageBus.syncPublisher<MavenImportListener>(MavenImportListener.TOPIC).artifactDownloadingStarted()
     try {
       val downloader = MavenArtifactDownloader(

@@ -669,11 +669,6 @@ import kotlin.math.abs
 
   override fun setTabsSplittingAllowed(allowed: Boolean) {
     tabsSplittingAllowed = allowed
-
-    val header = decorator?.header ?: return
-    if (header.isShowing) {
-      header.manageWestPanelTabComponentAndToolbar(true)
-    }
   }
 
   fun fireActivated(source: ToolWindowEventSource) {
@@ -941,7 +936,7 @@ import kotlin.math.abs
   }
 }
 
-private class ResizeActionGroup : DefaultActionGroup(
+internal class ResizeActionGroup : DefaultActionGroup(
   ActionsBundle.groupText("ResizeToolWindowGroup"),
   ActionManager.getInstance().let { actionManager ->
     listOf(

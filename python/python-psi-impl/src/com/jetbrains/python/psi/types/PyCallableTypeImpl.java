@@ -1,12 +1,10 @@
 // Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.jetbrains.python.psi.types;
 
-import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.psi.PsiElement;
 import com.intellij.util.ArrayUtilRt;
 import com.intellij.util.ProcessingContext;
 import com.intellij.util.containers.ContainerUtil;
-import com.jetbrains.python.PyNames;
 import com.jetbrains.python.psi.*;
 import com.jetbrains.python.psi.impl.PyCallExpressionHelper;
 import com.jetbrains.python.psi.resolve.PyResolveContext;
@@ -94,28 +92,8 @@ public class PyCallableTypeImpl implements PyCallableType {
   }
 
   @Override
-  public @Nullable String getName() {
-    final TypeEvalContext context = TypeEvalContext.codeInsightFallback(null);
-    return String.format("(%s) -> %s",
-                         myParameters != null ?
-                         StringUtil.join(myParameters,
-                                         param -> {
-                                           if (param != null) {
-                                             final StringBuilder builder = new StringBuilder();
-                                             final String name = param.getName();
-                                             final PyType type = param.getType(context);
-                                             if (name != null) {
-                                               builder.append(name);
-                                               builder.append(": ");
-                                             }
-                                             builder.append(type != null ? type.getName() : PyNames.UNKNOWN_TYPE);
-                                             return builder.toString();
-                                           }
-                                           return PyNames.UNKNOWN_TYPE;
-                                         },
-                                         ", ") :
-                         "...",
-                         myReturnType != null ? myReturnType.getName() : PyNames.UNKNOWN_TYPE);
+  public String toString() {
+    return "PyCallableType: " + getName();
   }
 
   @Override
@@ -148,6 +126,21 @@ public class PyCallableTypeImpl implements PyCallableType {
   }
 
   @Override
+  public @NotNull PyCallableType dropSelf(@NotNull TypeEvalContext context) {
+    final List<PyCallableParameter> parameters = getParameters(context);
+    if (parameters != null && myCallable instanceof PyFunction function) {
+      final List<PyCallableParameter> functionParameters = function.getParameters(context);
+
+      if (!ContainerUtil.isEmpty(parameters) && !ContainerUtil.isEmpty(functionParameters) && functionParameters.get(0).isSelf()) {
+        List<PyCallableParameter> newParameters = ContainerUtil.subList(parameters, 1);
+        return new PyCallableTypeImpl(newParameters, myReturnType, myCallable, myModifier, myImplicitOffset);
+      }
+    }
+
+    return this;
+  }
+
+  @Override
   public boolean equals(Object o) {
     if (this == o) return true;
     if (o == null || getClass() != o.getClass()) return false;
@@ -162,20 +155,5 @@ public class PyCallableTypeImpl implements PyCallableType {
   @Override
   public int hashCode() {
     return Objects.hash(myParameters, myReturnType, myCallable, myModifier, myImplicitOffset);
-  }
-
-  @Override
-  public @NotNull PyCallableType dropSelf(@NotNull TypeEvalContext context) {
-    final List<PyCallableParameter> parameters = getParameters(context);
-    if (!ContainerUtil.isEmpty(parameters) && myCallable instanceof PyFunction function) {
-      final List<PyCallableParameter> functionParameters = function.getParameters(context);
-
-      if (!ContainerUtil.isEmpty(functionParameters) && functionParameters.get(0).isSelf()) {
-        List<PyCallableParameter> newParameters = ContainerUtil.subList(parameters, 1);
-        return new PyCallableTypeImpl(newParameters, myReturnType, myCallable, myModifier, myImplicitOffset);
-      }
-    }
-
-    return this;
   }
 }

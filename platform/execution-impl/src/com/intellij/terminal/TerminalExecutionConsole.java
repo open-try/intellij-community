@@ -21,6 +21,7 @@ import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.DumbAwareAction;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.CheckedDisposable;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.Key;
 import com.intellij.openapi.util.Pair;
@@ -30,8 +31,8 @@ import com.intellij.psi.search.GlobalSearchScope;
 import com.intellij.util.LineSeparator;
 import com.intellij.util.ObjectUtils;
 import com.intellij.util.concurrency.annotations.RequiresEdt;
-import com.intellij.util.ui.update.UiNotifyConnector;
-import com.jediterm.terminal.HyperlinkStyle;
+import com.jediterm.core.util.CellPosition;
+import com.jediterm.core.util.TermSize;
 import com.jediterm.terminal.TerminalStarter;
 import com.jediterm.terminal.TtyConnector;
 import com.jediterm.terminal.model.JediTerminal;
@@ -53,6 +54,8 @@ import java.io.IOException;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import static com.intellij.terminal.TerminalExecutionConsoleBuilderKt.*;
+
 public class TerminalExecutionConsole implements ConsoleView, ObservableConsoleView {
   private static final Logger LOG = Logger.getInstance(TerminalExecutionConsole.class);
 
@@ -65,44 +68,71 @@ public class TerminalExecutionConsole implements ConsoleView, ObservableConsoleV
   private final TerminalConsoleContentHelper myContentHelper = new TerminalConsoleContentHelper(this);
 
   private boolean myEnterKeyDefaultCodeEnabled = true;
-  private boolean myConvertLfToCrlfForNonPtyProcess = false;
+  private boolean myConvertLfToCrlfForNonPtyProcess = DEFAULT_CONVERT_LF_TO_CRLF_FOR_PROCESS_WITHOUT_PTY;
   private final AtomicBoolean myFirstOutput = new AtomicBoolean(false);
 
+  /**
+   * @deprecated use {@link TerminalExecutionConsoleBuilder} and {@link #attachToProcess(ProcessHandler)} instead
+   */
+  @Deprecated
   public TerminalExecutionConsole(@NotNull Project project, @Nullable ProcessHandler processHandler) {
-    this(project, processHandler, getProvider());
+    this(project, DEFAULT_INITIAL_TERM_SIZE, createDefaultConsoleSettingsProvider(), processHandler);
   }
 
+  /**
+   * @deprecated use {@link TerminalExecutionConsoleBuilder} and {@link #attachToProcess(ProcessHandler)} instead
+   */
+  @Deprecated
   public TerminalExecutionConsole(@NotNull Project project,
                                   @Nullable ProcessHandler processHandler,
                                   @NotNull JBTerminalSystemSettingsProviderBase settingsProvider) {
-    this(project, 200, 24, processHandler, settingsProvider);
+    this(project, DEFAULT_INITIAL_TERM_SIZE, settingsProvider, processHandler);
   }
 
+  /**
+   * @deprecated use {@link TerminalExecutionConsoleBuilder} and {@link #attachToProcess(ProcessHandler)} instead
+   */
+  @Deprecated
   public TerminalExecutionConsole(@NotNull Project project, int columns, int lines, @Nullable ProcessHandler processHandler) {
-    this(project, columns, lines, processHandler, getProvider());
+    this(project, new TermSize(columns, lines), createDefaultConsoleSettingsProvider(), processHandler);
   }
 
+  /**
+   * @deprecated use {@link TerminalExecutionConsoleBuilder} and {@link #attachToProcess(ProcessHandler)} instead
+   */
+  @Deprecated
   public TerminalExecutionConsole(@NotNull Project project,
                                   int columns,
                                   int lines,
                                   @Nullable ProcessHandler processHandler,
                                   @NotNull JBTerminalSystemSettingsProviderBase settingsProvider) {
+    this(project, new TermSize(columns, lines), settingsProvider, processHandler);
+  }
+
+  private TerminalExecutionConsole(
+    @NotNull Project project,
+    @NotNull TermSize initialTermSize,
+    @NotNull JBTerminalSystemSettingsProviderBase settingsProvider,
+    @Nullable ProcessHandler processHandler
+  ) {
+    this(project, initialTermSize, settingsProvider, DEFAULT_CONVERT_LF_TO_CRLF_FOR_PROCESS_WITHOUT_PTY, processHandler);
+  }
+
+  TerminalExecutionConsole(
+    @NotNull Project project,
+    @NotNull TermSize initialTermSize,
+    @NotNull JBTerminalSystemSettingsProviderBase settingsProvider,
+    boolean convertLfToCrlfForNonPtyProcess,
+    @Nullable ProcessHandler processHandler
+  ) {
     myProject = project;
     myDataStream = new AppendableTerminalDataStream();
-    myTerminalWidget = new ConsoleTerminalWidget(project, columns, lines, settingsProvider);
+    myTerminalWidget = new ConsoleTerminalWidget(project, initialTermSize.getColumns(), initialTermSize.getRows(), settingsProvider);
     myInputMessageFilter = ConsoleViewUtil.computeInputFilter(this, project, GlobalSearchScope.allScope(project));
+    myConvertLfToCrlfForNonPtyProcess = convertLfToCrlfForNonPtyProcess;
     if (processHandler != null) {
       attachToProcess(processHandler);
     }
-  }
-
-  private static @NotNull JBTerminalSystemSettingsProviderBase getProvider() {
-    return new JBTerminalSystemSettingsProviderBase() {
-      @Override
-      public HyperlinkStyle.HighlightMode getHyperlinkHighlightingMode() {
-        return HyperlinkStyle.HighlightMode.ALWAYS;
-      }
-    };
   }
 
   public @NotNull JBTerminalWidget getTerminalWidget() {
@@ -127,7 +157,7 @@ public class TerminalExecutionConsole implements ConsoleView, ObservableConsoleV
 
     if (myFirstOutput.compareAndSet(false, true) &&
         contentType == ConsoleViewContentType.SYSTEM_OUTPUT &&
-        getPtyProcess() instanceof WinConPtyProcess) {
+        getProcess() instanceof WinConPtyProcess) {
       moveScreenToScrollbackBufferAndShowAllOutput();
     }
   }
@@ -149,14 +179,62 @@ public class TerminalExecutionConsole implements ConsoleView, ObservableConsoleV
    */
   private void moveScreenToScrollbackBufferAndShowAllOutput() throws IOException {
     LOG.trace("Printing command line detected at the beginning of the output, scheduling a scroll command.");
+    CheckedDisposable disposed = Disposer.newCheckedDisposable(this);
     BoundedRangeModel verticalScrollModel = myTerminalWidget.getTerminalPanel().getVerticalScrollModel();
     verticalScrollModel.addChangeListener(new javax.swing.event.ChangeListener() {
+      private boolean myIgnoreScrollEvent = false;
+      private int myEventCount = 0;
+
       @Override
       public void stateChanged(ChangeEvent e) {
-        verticalScrollModel.removeChangeListener(this);
-        UiNotifyConnector.doWhenFirstShown(myTerminalWidget.getTerminalPanel(), () -> {
-          myTerminalWidget.getTerminalPanel().scrollToShowAllOutput();
-        });
+        if (myIgnoreScrollEvent) {
+          return;
+        }
+        int id = myEventCount++;
+        // id == 0 -> vertical scrollbar change caused by `ESC[2J` (moving screen lines to scrollback buffer)
+        // id == 1 -> vertical scrollbar change caused by the initial terminal resize according to the UI component actual bounds
+        if (id > 1) {
+          verticalScrollModel.removeChangeListener(this);
+          return;
+        }
+        ApplicationManager.getApplication().invokeLater(() -> {
+          if (!disposed.isDisposed()) {
+            if (id == 1) {
+              runIgnoringScrollEvents(() -> {
+                verticalScrollModel.setValue(0); // scroll to bottom
+              });
+            }
+            tryScrollToShowAllOutput();
+          }
+        }, ModalityState.any());
+      }
+
+      private void tryScrollToShowAllOutput() {
+        TerminalTextBuffer textBuffer = myTerminalWidget.getTerminalTextBuffer();
+        textBuffer.lock();
+        try {
+          CellPosition cursor = myTerminalWidget.getTerminal().getCursorPosition();
+          int historyLinesCount = textBuffer.getHistoryLinesCount();
+          int termHeight = textBuffer.getHeight();
+          if (historyLinesCount + cursor.getY() <= termHeight) {
+            runIgnoringScrollEvents(() -> {
+              myTerminalWidget.getTerminalPanel().scrollToShowAllOutput();
+            });
+          }
+        }
+        finally {
+          textBuffer.unlock();
+        }
+      }
+
+      private void runIgnoringScrollEvents(@NotNull Runnable runnable) {
+        myIgnoreScrollEvent = true;
+        try {
+          runnable.run();
+        }
+        finally {
+          myIgnoreScrollEvent = false;
+        }
       }
     });
     // `ESC[2J` moves screen lines to the scrollback buffer
@@ -186,6 +264,10 @@ public class TerminalExecutionConsole implements ConsoleView, ObservableConsoleV
     return this;
   }
 
+  /**
+   * @deprecated use {@link TerminalExecutionConsoleBuilder#convertLfToCrlfForProcessWithoutPty(boolean)} instead
+   */
+  @Deprecated
   public @NotNull TerminalExecutionConsole withConvertLfToCrlfForNonPtyProcess(boolean convertLfToCrlfForNonPtyProcess) {
     myConvertLfToCrlfForNonPtyProcess = convertLfToCrlfForNonPtyProcess;
     return this;
@@ -268,12 +350,12 @@ public class TerminalExecutionConsole implements ConsoleView, ObservableConsoleV
     myTerminalWidget.createTerminalSession(ttyConnector);
     myTerminalWidget.start();
     if (attachToProcessOutput) {
-      boolean convertLfToCrlf = shouldConvertLfToCrlf(processHandler);
+      boolean isProcessWithPty = isProcessWithPty(processHandler);
       if (processHandler instanceof ColoredProcessHandler coloredProcessHandler) {
         coloredProcessHandler.addRawTextListener(new ColoredProcessHandler.RawTextListener() {
           @Override
           public void onRawTextAvailable(@NotNull String text, @NotNull Key<?> outputType) {
-            processProcessOutputText(text, outputType, convertLfToCrlf);
+            processProcessOutputText(text, outputType, isProcessWithPty);
           }
         });
       }
@@ -281,7 +363,7 @@ public class TerminalExecutionConsole implements ConsoleView, ObservableConsoleV
         processHandler.addProcessListener(new ProcessListener() {
           @Override
           public void onTextAvailable(@NotNull ProcessEvent event, @NotNull Key outputType) {
-            processProcessOutputText(event.getText(), outputType, convertLfToCrlf);
+            processProcessOutputText(event.getText(), outputType, isProcessWithPty);
           }
         });
       }
@@ -297,7 +379,7 @@ public class TerminalExecutionConsole implements ConsoleView, ObservableConsoleV
     });
   }
 
-  private void processProcessOutputText(@NotNull String text, @NotNull Key<?> outputType, boolean convertLfToCrlf) {
+  private void processProcessOutputText(@NotNull String text, @NotNull Key<?> outputType, boolean isProcessWithPty) {
     try {
       ConsoleViewContentType contentType = null;
       if (outputType != ProcessOutputTypes.STDOUT) {
@@ -306,7 +388,7 @@ public class TerminalExecutionConsole implements ConsoleView, ObservableConsoleV
       if (outputType == ProcessOutputTypes.SYSTEM) {
         text = StringUtil.convertLineSeparators(text, LineSeparator.CRLF.getSeparatorString());
       }
-      else if (convertLfToCrlf) {
+      else if (!isProcessWithPty && myConvertLfToCrlfForNonPtyProcess) {
         text = convertTextToCRLF(text);
       }
       ConsoleViewContentType notNullContentType = ObjectUtils.notNull(contentType, ConsoleViewContentType.NORMAL_OUTPUT);
@@ -327,16 +409,13 @@ public class TerminalExecutionConsole implements ConsoleView, ObservableConsoleV
     }
   }
 
-  private boolean shouldConvertLfToCrlf(@NotNull ProcessHandler processHandler) {
-    return myConvertLfToCrlfForNonPtyProcess && isNonPtyProcess(processHandler);
-  }
-
-  private static boolean isNonPtyProcess(@NotNull ProcessHandler processHandler) {
-    if (processHandler instanceof BaseProcessHandler) {
-      Process process = ((BaseProcessHandler<?>)processHandler).getProcess();
-      return !(process instanceof PtyProcess);
+  private static boolean isProcessWithPty(@NotNull ProcessHandler processHandler) {
+    if (processHandler instanceof BaseProcessHandler<?> baseProcessHandler) {
+      Process process = baseProcessHandler.getProcess();
+      return process instanceof PtyProcess ||
+             (process instanceof PtyBasedProcess ptyBasedProcess && ptyBasedProcess.hasPty());
     }
-    return true;
+    return false;
   }
 
   @Override
@@ -415,12 +494,7 @@ public class TerminalExecutionConsole implements ConsoleView, ObservableConsoleV
   }
 
   public static boolean isAcceptable(@NotNull ProcessHandler processHandler) {
-    if (processHandler instanceof BaseProcessHandler<?> baseProcessHandler) {
-      Process process = baseProcessHandler.getProcess();
-      return process instanceof PtyProcess ||
-             (process instanceof PtyBasedProcess && ((PtyBasedProcess)process).hasPty());
-    }
-    return false;
+    return isProcessWithPty(processHandler);
   }
 
   private final class ConsoleTerminalWidget extends JBTerminalWidget {
@@ -449,7 +523,7 @@ public class TerminalExecutionConsole implements ConsoleView, ObservableConsoleV
         @Override
         public byte[] getCode(int key, int modifiers) {
           if (key == KeyEvent.VK_ENTER && modifiers == 0 && myEnterKeyDefaultCodeEnabled) {
-            PtyProcess process = getPtyProcess();
+            PtyProcess process = ObjectUtils.tryCast(getProcess(), PtyProcess.class);
             return process != null ? new byte[]{process.getEnterKeyCode()} : LineSeparator.CR.getSeparatorBytes();
           }
           return super.getCode(key, modifiers);
@@ -464,9 +538,9 @@ public class TerminalExecutionConsole implements ConsoleView, ObservableConsoleV
     }
   }
 
-  private @Nullable PtyProcess getPtyProcess() {
+  private @Nullable Process getProcess() {
     ProcessHandlerTtyConnector phc = ObjectUtils.tryCast(myTerminalWidget.getTtyConnector(), ProcessHandlerTtyConnector.class);
-    return phc != null ? phc.getPtyProcess() : null;
+    return phc != null ? phc.getProcess() : null;
   }
 
   private final class ClearAction extends DumbAwareAction {

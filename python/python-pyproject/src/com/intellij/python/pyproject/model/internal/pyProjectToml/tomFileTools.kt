@@ -3,12 +3,13 @@ package com.intellij.python.pyproject.model.internal.pyProjectToml
 import com.intellij.openapi.diagnostic.fileLogger
 import com.intellij.python.pyproject.PY_PROJECT_TOML
 import com.intellij.python.pyproject.PyProjectToml
+import com.intellij.python.pyproject.model.spi.ProjectDependencies
 import com.intellij.python.pyproject.model.spi.ProjectName
-import com.intellij.python.pyproject.model.spi.ProjectStructureInfo
 import com.intellij.python.pyproject.model.spi.PyProjectTomlProject
 import com.intellij.util.concurrency.annotations.RequiresBackgroundThread
 import com.jetbrains.python.Result
 import com.jetbrains.python.venvReader.Directory
+import com.jetbrains.python.venvReader.VirtualEnvReader
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.IOException
@@ -23,41 +24,70 @@ import kotlin.io.path.toPath
 import kotlin.io.path.visitFileTree
 
 // Tools to walk FS and parse pyproject.toml
+/**
+ * Walks down the [root]. Like [walkFileSystemNoTomlContent] but with TOML files content
+ */
+internal suspend fun walkFileSystemWithTomlContent(root: Directory): Result<FSWalkInfoWithToml, IOException> {
+  val (rawTomlFiles, excludedDirs) = walkFileSystemNoTomlContent(root).getOr { return it }
 
-internal suspend fun walkFileSystem(root: Directory): FSWalkInfo {
-  val files = ArrayList<Path>(10)
-  val excludeDir = ArrayList<Directory>(10)
-  withContext(Dispatchers.IO) {
-    root.visitFileTree {
-      onVisitFile { file, _ ->
-        if (file.name == PY_PROJECT_TOML) {
-          files.add(file)
-        }
-        return@onVisitFile FileVisitResult.CONTINUE
-      }
-      onPostVisitDirectory { directory, _ ->
-        return@onPostVisitDirectory if (directory.name.startsWith(".")) {
-          excludeDir.add(directory)
-          FileVisitResult.SKIP_SUBTREE
-        }
-        else {
-          FileVisitResult.CONTINUE
-        }
-      }
-    }
-  }
   // TODO: with a big number of files, use `chunk` to parse them concurrently
-  val tomlFiles = files.map { file ->
+  val tomlFiles = rawTomlFiles.map { file ->
     val toml = readFile(file) ?: return@map null
     file to toml
   }.filterNotNull().toMap()
-  return FSWalkInfo(tomlFiles = tomlFiles, excludeDir.toSet())
+  return Result.success(FSWalkInfoWithToml(tomlFiles = tomlFiles, excludedDirs.toSet()))
 }
 
- suspend fun getProjectStructureDefault(
+/**
+ * Walks down [root], returns all [PY_PROJECT_TOML] and [FsWalkInfoNoToml.excludedDirs] (started with dot).
+ * [IOException] is returned if [root] is inaccessible
+ */
+suspend fun walkFileSystemNoTomlContent(
+  root: Directory,
+): Result<FsWalkInfoNoToml, IOException> {
+  val excludedDirs = ArrayList<Directory>(10)
+  val rawTomlFiles = ArrayList<Path>(10)
+  try {
+    withContext(Dispatchers.IO) {
+      root.visitFileTree {
+        onVisitFile { file, _ ->
+          if (file.name == PY_PROJECT_TOML) {
+            rawTomlFiles.add(file)
+          }
+          return@onVisitFile FileVisitResult.CONTINUE
+        }
+        onPreVisitDirectory { directory, _ ->
+          val dirName = directory.name
+
+          // default name is popular enough to make a shortcut
+          if (dirName == VirtualEnvReader.DEFAULT_VIRTUALENV_DIRNAME
+              || VirtualEnvReader.Instance.findPythonInPythonRoot(directory) != null) {
+            // Venv: exclude and skip
+            excludedDirs.add(directory)
+            FileVisitResult.SKIP_SUBTREE
+          }
+          else if (dirName.startsWith(".")) {
+            // Dot: just skip
+            FileVisitResult.SKIP_SUBTREE
+          }
+          else {
+            FileVisitResult.CONTINUE
+          }
+        }
+      }
+    }
+    return Result.success(FsWalkInfoNoToml(rawTomlFiles = rawTomlFiles, excludedDirs = excludedDirs))
+  }
+  catch (e: IOException) {
+    return Result.failure(e)
+  }
+}
+
+
+suspend fun getPEP621Deps(
   entries: Map<ProjectName, PyProjectTomlProject>,
   rootIndex: Map<Directory, ProjectName>,
-): ProjectStructureInfo = withContext(Dispatchers.Default) {
+): ProjectDependencies = withContext(Dispatchers.Default) {
   val deps = entries.asSequence().associate { (name, entry) ->
     val deps = getDependenciesFromToml(entry.pyProjectToml).mapNotNull { dir ->
       rootIndex[dir] ?: run {
@@ -67,7 +97,7 @@ internal suspend fun walkFileSystem(root: Directory): FSWalkInfo {
     }.toSet()
     Pair(name, deps)
   }
-  ProjectStructureInfo(dependencies = deps, membersToWorkspace = emptyMap()) // No workspace info (yet)
+  ProjectDependencies(deps)  // No workspace info (yet)
 }
 
 private val logger = fileLogger()
@@ -80,12 +110,13 @@ private suspend fun readFile(file: Path): PyProjectToml? {
     logger.warn("Can't read $file", e)
     return null
   }
-  return when (val r = withContext(Dispatchers.Default) { PyProjectToml.parse(content) }) {
-    is Result.Failure -> {
-      logger.warn("Errors on $file: ${r.error.joinToString(", ")}")
-      null
+  return withContext(Dispatchers.Default) {
+    val toml = PyProjectToml.parse(content)
+    val errors = toml.issues.joinToString(", ")
+    if (errors.isNotBlank()) {
+      logger.warn("Errors on $file: $errors")
     }
-    is Result.Success -> r.result
+    toml
   }
 }
 

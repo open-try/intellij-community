@@ -177,7 +177,7 @@ private class ProjectPsiChangesProcessor(scope: CoroutineScope) {
   }
 }
 
-private class ProjectProblemFileSelectionListenerStartupActivity : ProjectActivity {
+internal class ProjectProblemFileSelectionListenerStartupActivity : ProjectActivity {
   override suspend fun execute(project: Project) {
     if (ApplicationManager.getApplication().isHeadlessEnvironment && !TestModeFlags.`is`(ProjectProblemUtils.ourTestingProjectProblems)) {
       return
@@ -194,7 +194,7 @@ private class ProjectProblemFileSelectionListenerStartupActivity : ProjectActivi
           if (!virtualFile.isValid) return@nonBlocking null
           val viewProvider = PsiManager.getInstance(project).findViewProvider(virtualFile) ?: return@nonBlocking null
           if (viewProvider.isPhysical) return@nonBlocking null // will already be removed by the vfs file listener
-          removeState(viewProvider.getPsi(viewProvider.baseLanguage))
+          removeState(viewProvider.getPsi(viewProvider.baseLanguage)!!)
         }.expireWith(parentDisposable).submit(AppExecutorUtil.getAppExecutorService())
       }
     }, parentDisposable)

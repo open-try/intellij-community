@@ -31,7 +31,9 @@ kotlin {
     "-opt-in=kotlin.ExperimentalStdlibApi",
     "-Xlambdas=class",
     "-Xconsistent-data-class-copy-visibility",
+    "-Xcontext-parameters",
     "-XXLanguage:+AllowEagerSupertypeAccessibilityChecks",
+    "-progressive",
   )
   jvm {}
   sourceSets.commonMain.configure { kotlin.srcDir(layout.projectDirectory.dir("../srcCommonMain")) }
@@ -64,8 +66,8 @@ kotlin {
       isTransitive = false
     }
   }
-  sourceSets.jvmTest.dependencies {
-    implementation(project(":fleet.junit"))
+  sourceSets.commonTest.dependencies {
+    implementation(project(":fleet.test.runtime"))
   }
   // KOTLIN__MARKER_END
 }

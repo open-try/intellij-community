@@ -258,7 +258,7 @@ open class ProjectManagerImpl : ProjectManagerEx(), Disposable {
   protected fun addToOpened(project: Project): Boolean {
     assert(!project.isDisposed) { "Must not open already disposed project" }
     synchronized(lock) {
-      if (openProjectByHash.put(project.locationHash, project) != null) {
+      if (openProjectByHash.putIfAbsent(project.locationHash, project) != null) {
         return false
       }
       openProjects += project
@@ -786,7 +786,6 @@ open class ProjectManagerImpl : ProjectManagerEx(), Disposable {
       (project.serviceAsync<StartupManager>() as StartupManagerImpl).runPostStartupActivities()
     }
     LifecycleUsageTriggerCollector.onProjectOpened(project)
-    WslUsagesCollector.logProjectOpened(project)
 
     options.callback?.projectOpened(project, module ?: project.serviceAsync<ModuleManager>().modules.firstOrNull())
 
@@ -1375,7 +1374,8 @@ private suspend fun initProject(
     project.registerComponents()
     registerComponentActivity?.end()
 
-    if (ApplicationManager.getApplication().isUnitTestMode) {
+    if (ApplicationManager.getApplication().isUnitTestMode ||
+        ApplicationManagerEx.isInIntegrationTest()) {
       @Suppress("TestOnlyProblems")
       for (listener in ProjectServiceContainerCustomizer.getEp().extensionList) {
         listener.serviceRegistered(project)

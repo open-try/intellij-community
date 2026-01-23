@@ -27,6 +27,7 @@ import com.intellij.ui.hover.TreeHoverListener
 import com.intellij.ui.speedSearch.SpeedSearchSupply
 import com.intellij.ui.treeStructure.Tree
 import com.intellij.util.containers.FList
+import com.intellij.util.text.matching.MatchedFragment
 import com.intellij.util.text.matching.MatchingMode
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
@@ -63,6 +64,7 @@ import javax.swing.JTree
 import javax.swing.TransferHandler
 import javax.swing.event.TreeExpansionEvent
 import javax.swing.event.TreeExpansionListener
+import kotlin.collections.asReversed
 
 internal class BranchesTreeComponent(project: Project) : DnDAwareTree() {
 
@@ -408,7 +410,7 @@ private class BranchesFilteringSpeedSearch(
     val text = tree.getText(userObject) ?: return
     val singleMatch = matchingFragments?.singleOrNull() ?: return
 
-    val matchingDegree = matcher.matchingDegree(text, false, FList.singleton(singleMatch))
+    val matchingDegree = matcher.matchingDegree(text, false, listOf(MatchedFragment(singleMatch.startOffset, singleMatch.endOffset)))
     if (matchingDegree > (bestMatch?.matchingDegree ?: 0)) {
       val node = tree.searchModel.getNode(userObject)
       bestMatch = BestMatch(matchingDegree, node)
@@ -479,23 +481,32 @@ private class BranchesTreeMatcher(rawPattern: String?) : MinusculeMatcher() {
 
   override val pattern: String = rawPattern.orEmpty()
 
-  override fun matchingFragments(name: String): FList<TextRange>? {
+  override fun match(name: String): List<MatchedFragment>? {
     val candidates = matchers.mapNotNull { matcher ->
-      matcher.matchingFragments(name)
+      matcher.match(name)
     }
     val fragments = candidates.maxByOrNull { fragments ->
-      fragments.sumOf { textRange -> textRange.endOffset - textRange.startOffset }
+      fragments.sumOf { textRange -> textRange.length }
     }
     return fragments
   }
 
-  override fun matchingDegree(name: String, valueStartCaseMatch: Boolean, fragments: FList<out TextRange>?): Int =
+  @Deprecated("use match(String)", replaceWith = ReplaceWith("match(name)"))
+  override fun matchingFragments(name: String): FList<TextRange>? {
+    return match(name)?.asReversed()?.asSequence()?.map { TextRange(it.startOffset, it.endOffset) }?.fold(FList.emptyList()) { acc, textRange -> acc.prepend(textRange) }
+  }
+
+  override fun matchingDegree(name: String, valueStartCaseMatch: Boolean, fragments: List<MatchedFragment>?): Int =
     matchers.singleOrNull()?.matchingDegree(name, valueStartCaseMatch, fragments)
     ?: multipleMatchersMatchingDegree(fragments)
 
-  private fun multipleMatchersMatchingDegree(fragments: FList<out TextRange>?) =
-    if (fragments?.isNotEmpty() == true) PARTIAL_MATCH_DEGREE
-    else NO_MATCH_DEGREE
+  @Deprecated("use matchingDegree(String, Boolean, List<MatchedFragment>)", replaceWith = ReplaceWith("matchingDegree(name, valueStartCaseMatch, fragments.map { MatchedFragment(it.startOffset, it.endOffset) })"))
+  override fun matchingDegree(name: String, valueStartCaseMatch: Boolean, fragments: FList<out TextRange>?): Int {
+    return matchingDegree(name, valueStartCaseMatch, fragments?.map { MatchedFragment(it.startOffset, it.endOffset) })
+  }
+
+  private fun multipleMatchersMatchingDegree(fragments: List<MatchedFragment>?) =
+    if (fragments?.isNotEmpty() == true) PARTIAL_MATCH_DEGREE else NO_MATCH_DEGREE
 
   companion object {
     const val NO_MATCH_DEGREE = 0

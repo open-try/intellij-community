@@ -33,6 +33,7 @@ import com.intellij.util.UriUtil;
 import com.intellij.util.containers.*;
 import com.intellij.util.indexing.FindSymbolParameters;
 import com.intellij.util.indexing.ProcessorWithThrottledCancellationCheck;
+import com.intellij.util.text.matching.MatchedFragment;
 import com.intellij.util.text.matching.MatchingMode;
 import one.util.streamex.StreamEx;
 import org.jetbrains.annotations.NonNls;
@@ -396,9 +397,9 @@ public class GotoFileItemProvider extends DefaultChooseByNameItemProvider {
       ProgressManager.checkCanceled();
 
       String qualifier = Objects.requireNonNull(getParentPath(item));
-      FList<TextRange> fragments = qualifierMatcher.matchingFragments(qualifier);
+      List<MatchedFragment> fragments = qualifierMatcher.match(qualifier);
       if (fragments != null) {
-        int gapPenalty = fragments.isEmpty() ? 0 : qualifier.length() - fragments.get(fragments.size() - 1).getEndOffset();
+        int gapPenalty = fragments.isEmpty() ? 0 : qualifier.length() - fragments.getLast().getEndOffset();
         int exactMatchScore = isExactMatch(item, completePattern) ? EXACT_MATCH_DEGREE : 0;
         int qualifierDegree = qualifierMatcher.matchingDegree(qualifier, false, fragments) - gapPenalty + exactMatchScore;
         matching.add(new FoundItemDescriptor<>(item, qualifierDegree));
@@ -461,7 +462,7 @@ public class GotoFileItemProvider extends DefaultChooseByNameItemProvider {
 
 
   private @Unmodifiable @NotNull Iterable<FoundItemDescriptor<PsiFileSystemItem>> getItemsForNames(@NotNull GlobalSearchScope scope,
-                                                                                                   @NotNull List<? extends MatchResult> matchResults,
+                                                                                                   @NotNull List<MatchResult> matchResults,
                                                                                                    @NotNull Function<? super String, Object[]> indexResult) {
     List<PsiFileSystemItem> group = new ArrayList<>();
     Map<PsiFileSystemItem, Integer> nesting = new HashMap<>();

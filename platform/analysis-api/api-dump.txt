@@ -7,6 +7,7 @@ a:com.intellij.codeInsight.TailType
 - ps:moveCaret(com.intellij.openapi.editor.ModNavigator,I,I):I
 com.intellij.codeInsight.completion.BaseCompletionParameters
 - a:getCompletionType():com.intellij.codeInsight.completion.CompletionType
+- a:getInvocationCount():I
 - a:getOffset():I
 - a:getOriginalFile():com.intellij.psi.PsiFile
 - a:getOriginalPosition():com.intellij.psi.PsiElement
@@ -18,6 +19,9 @@ com.intellij.codeInsight.completion.BatchConsumer
 f:com.intellij.codeInsight.completion.CompletionConfidenceEP
 - com.intellij.lang.LanguageExtensionPoint
 - <init>():V
+f:com.intellij.codeInsight.completion.CompletionLocation
+- <init>(com.intellij.codeInsight.completion.BaseCompletionParameters):V
+- getBaseCompletionParameters():com.intellij.codeInsight.completion.BaseCompletionParameters
 f:com.intellij.codeInsight.completion.CompletionParameters
 - com.intellij.codeInsight.completion.BaseCompletionParameters
 - getCompletionType():com.intellij.codeInsight.completion.CompletionType
@@ -40,6 +44,10 @@ f:com.intellij.codeInsight.completion.CompletionParameters
 com.intellij.codeInsight.completion.CompletionProcess
 - a:isAutopopupCompletion():Z
 a:com.intellij.codeInsight.completion.CompletionService
+- a:defaultSorter(com.intellij.codeInsight.completion.BaseCompletionParameters,com.intellij.codeInsight.completion.PrefixMatcher):com.intellij.codeInsight.completion.CompletionSorter
+- defaultSorter(com.intellij.codeInsight.completion.CompletionParameters,com.intellij.codeInsight.completion.PrefixMatcher):com.intellij.codeInsight.completion.CompletionSorter
+Fa:com.intellij.codeInsight.completion.CompletionSorter
+- s:defaultSorter(com.intellij.codeInsight.completion.BaseCompletionParameters,com.intellij.codeInsight.completion.PrefixMatcher):com.intellij.codeInsight.completion.CompletionSorter
 a:com.intellij.codeInsight.completion.CompletionWeigher
 - com.intellij.psi.Weigher
 com.intellij.codeInsight.completion.InsertHandler
@@ -56,7 +64,7 @@ com.intellij.codeInsight.completion.LookupElementListPresenter
 c:com.intellij.codeInsight.completion.PlainPrefixMatcher
 - sf:ALWAYS_TRUE:com.intellij.codeInsight.completion.PrefixMatcher
 a:com.intellij.codeInsight.completion.PrefixMatcher
-- getMatchingFragments(java.lang.String):java.util.List
+- getMatchingFragments(java.lang.String,java.lang.String):java.util.List
 com.intellij.codeInsight.daemon.ChangeLocalityDetector
 - a:getChangeHighlightingDirtyScopeFor(com.intellij.psi.PsiElement):com.intellij.psi.PsiElement
 a:com.intellij.codeInsight.daemon.DaemonCodeAnalyzer
@@ -420,7 +428,9 @@ com.intellij.codeInspection.lang.RefManagerExtension
 - shouldProcessExternalFile(com.intellij.psi.PsiFile):Z
 - a:visitElement(com.intellij.psi.PsiElement):V
 com.intellij.codeInspection.options.LocMessage
+- s:empty():com.intellij.codeInspection.options.LocMessage
 - a:label():java.lang.String
+- s:of(java.lang.String):com.intellij.codeInspection.options.LocMessage
 - splitLabel():com.intellij.codeInspection.options.LocMessage$PrefixSuffix
 com.intellij.codeInspection.options.OptRegularComponent
 - com.intellij.codeInspection.options.OptComponent
@@ -707,6 +717,7 @@ com.intellij.modcommand.ModTemplateBuilder
 - a:finishAt(I):com.intellij.modcommand.ModTemplateBuilder
 - a:onTemplateFinished(java.util.function.Function):com.intellij.modcommand.ModTemplateBuilder
 f:com.intellij.modcommand.ModUpdateFileText
+- shrinkFragments():com.intellij.modcommand.ModUpdateFileText
 - translateOffset(I,Z):I
 f:com.intellij.modcommand.Presentation$HighlightRange
 - <init>(com.intellij.openapi.util.TextRange,com.intellij.modcommand.Presentation$HighlightingKind):V
@@ -751,6 +762,8 @@ com.intellij.openapi.fileEditor.FileEditorManagerListener$Before
 - sf:FILE_EDITOR_MANAGER:com.intellij.util.messages.Topic
 - beforeFileClosed(com.intellij.openapi.fileEditor.FileEditorManager,com.intellij.openapi.vfs.VirtualFile):V
 - beforeFileOpened(com.intellij.openapi.fileEditor.FileEditorManager,com.intellij.openapi.vfs.VirtualFile):V
+e:com.intellij.openapi.fileEditor.FileEditorPolicy
+- sf:HIDE_OTHER_EDITORS:com.intellij.openapi.fileEditor.FileEditorPolicy
 com.intellij.openapi.fileEditor.FileEditorProvider
 - com.intellij.openapi.project.PossiblyDumbAware
 - sf:EMPTY_ARRAY:com.intellij.openapi.fileEditor.FileEditorProvider[]

@@ -1,4 +1,4 @@
-// Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
+// Copyright 2000-2026 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 @file:Suppress("ReplaceGetOrSet", "ReplacePutWithAssignment", "OVERRIDE_DEPRECATION", "LiftReturnOrAssignment")
 
 package com.intellij.ide
@@ -54,6 +54,7 @@ import com.intellij.ui.win.createWinDockDelegate
 import com.intellij.util.PathUtilRt
 import com.intellij.util.PlatformUtils
 import com.intellij.util.io.createParentDirectories
+import com.intellij.util.text.nullize
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -66,6 +67,7 @@ import java.nio.ByteBuffer
 import java.nio.file.Files
 import java.nio.file.InvalidPathException
 import java.nio.file.Path
+import java.nio.file.Paths
 import java.nio.file.StandardOpenOption
 import java.util.*
 import java.util.concurrent.atomic.AtomicBoolean
@@ -76,6 +78,7 @@ import kotlin.collections.Map.Entry
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.EmptyCoroutineContext
 import kotlin.io.path.invariantSeparatorsPathString
+import kotlin.io.path.name
 import kotlin.io.path.relativeTo
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -643,7 +646,7 @@ open class RecentProjectsManagerBase(coroutineScope: CoroutineScope) :
     disableUpdatingRecentInfo.set(true)
     try {
       if (openPaths.size == 1 || isOpenProjectsOneByOneRequired()) {
-        FUSProjectHotStartUpMeasurer.reportReopeningProjects(openPaths)
+        FUSProjectHotStartUpMeasurer.reportReopeningProjects(openPaths.map { Paths.get(it.key) })
         return openOneByOne(openPaths, index = 0, someProjectWasOpened = false)
       }
 
@@ -654,7 +657,7 @@ open class RecentProjectsManagerBase(coroutineScope: CoroutineScope) :
         }.getOrLogException(LOG)
       }
 
-      FUSProjectHotStartUpMeasurer.reportReopeningProjects(toOpen)
+      FUSProjectHotStartUpMeasurer.reportReopeningProjects(toOpen.map { it.first })
 
       if (toOpen.size == 1) {
         val pair = toOpen.get(0)
@@ -1052,6 +1055,8 @@ private suspend fun fireLastProjectsReopenedEvent(activeProject: Project) {
 
 private fun isUseProjectFrameAsSplash() = Registry.`is`("ide.project.frame.as.splash")
 
+private const val IDEA_PROJECT_FILE_EXTENSION = ".ipr"
+
 private fun readProjectName(path: String): String {
   if (!RecentProjectsManagerBase.isFileSystemPath(path)) {
     return path
@@ -1068,8 +1073,9 @@ private fun readProjectName(path: String): String {
   // Avoid greedy I/O under non-local projects. For example, in the case of WSL:
   //	1.	it may trigger Ijent initialization for each recent project
   //	2.	with Ijent disabled, performance may degrade further — 9P is very slow and could lead to UI freezes
-  if (file.getEelDescriptor() != LocalEelDescriptor) {
-    return path
+  val eelDescriptor = file.getEelDescriptor()
+  if (eelDescriptor != LocalEelDescriptor) {
+    return file.name.removeSuffix(IDEA_PROJECT_FILE_EXTENSION).nullize()?.let { it + " (" + eelDescriptor.name + ")" } ?: path
   }
 
   return ProjectStorePathManager.getInstance()
@@ -1113,7 +1119,7 @@ private fun validateRecentProjects(modCounter: LongAdder, map: MutableMap<String
 
 internal fun getProjectNameOnlyByPath(path: String): String {
   val name = PathUtilRt.getFileName(path)
-  return if (path.endsWith(".ipr")) FileUtilRt.getNameWithoutExtension(name) else name
+  return if (path.endsWith(IDEA_PROJECT_FILE_EXTENSION)) FileUtilRt.getNameWithoutExtension(name) else name
 }
 
 @JvmInline

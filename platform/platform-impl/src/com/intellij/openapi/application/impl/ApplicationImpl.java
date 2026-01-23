@@ -1,4 +1,4 @@
-// Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
+// Copyright 2000-2026 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.openapi.application.impl;
 
 import com.intellij.CommonBundle;
@@ -6,7 +6,6 @@ import com.intellij.codeWithMe.ClientId;
 import com.intellij.concurrency.ThreadContext;
 import com.intellij.configurationStore.StoreUtil;
 import com.intellij.diagnostic.ActivityCategory;
-import com.intellij.diagnostic.PluginException;
 import com.intellij.diagnostic.StartUpMeasurer;
 import com.intellij.diagnostic.ThreadDumper;
 import com.intellij.featureStatistics.fusCollectors.LifecycleUsageTriggerCollector;
@@ -57,7 +56,6 @@ import com.intellij.util.concurrency.*;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.messages.Topic;
 import com.intellij.util.ui.EDT;
-import kotlin.Pair;
 import kotlin.Unit;
 import kotlin.coroutines.CoroutineContext;
 import kotlin.jvm.functions.Function0;
@@ -385,7 +383,7 @@ public final class ApplicationImpl extends ClientAwareComponentManager implement
 
   @Override
   public boolean isWriteIntentLockAcquired() {
-    return getThreadingSupport().isWriteIntentLocked();
+    return getThreadingSupport().isWriteIntentReadAccessAllowed();
   }
 
   @Override
@@ -564,8 +562,7 @@ public final class ApplicationImpl extends ClientAwareComponentManager implement
     // Start from inner layer: transaction guard
     final var guarded = myTransactionGuard.wrapLaterInvocation(runnable, state);
     // Middle layer: lock and modality
-    boolean wrapWithLocksDeep = wrapWithLocks && !ThreadingRuntimeFlagsKt.getUseNonBlockingFlushQueue();
-    final var locked = wrapWithRunIntendedWriteActionAndModality(guarded, wrapWithLocksDeep, ctxAware ? null : state);
+    final var locked = wrapWithRunIntendedWriteActionAndModality(guarded, false, ctxAware ? null : state);
     // Outer layer context capture & reset
     final var finalRunnable = AppImplKt.rethrowExceptions(AppScheduledExecutorService::captureContextCancellationForRunnableThatDoesNotOutliveContextScope, locked);
 
@@ -1049,24 +1046,18 @@ public final class ApplicationImpl extends ClientAwareComponentManager implement
   }
 
   @Override
-  @SuppressWarnings("RedundantThrows")
-  public <T, E extends Throwable> T runUnlockingIntendedWrite(@NotNull ThrowableComputable<T, E> action) throws E {
-    return getThreadingSupport().runUnlockingIntendedWrite(rethrowCheckedExceptions(action));
-  }
-
-  @Override
   public void runReadAction(@NotNull Runnable action) {
-    getThreadingSupport().runReadAction(action.getClass(), runnableUnitFunction(action));
+    getThreadingSupport().runReadAction(runnableUnitFunction(action));
   }
 
   @Override
   public <T> T runReadAction(@NotNull Computable<T> computation) {
-    return getThreadingSupport().runReadAction(computation.getClass(), computation::compute);
+    return getThreadingSupport().runReadAction(computation::compute);
   }
 
   @Override
   public <T, E extends Throwable> T runReadAction(@NotNull ThrowableComputable<T, E> computation) throws E {
-    return getThreadingSupport().runReadAction(computation.getClass(), rethrowCheckedExceptions(computation));
+    return getThreadingSupport().runReadAction(rethrowCheckedExceptions(computation));
   }
 
   @Override
@@ -1098,7 +1089,7 @@ public final class ApplicationImpl extends ClientAwareComponentManager implement
     @Nls(capitalization = Nls.Capitalization.Title) @Nullable String cancelText,
     @NotNull Consumer<? super @Nullable ProgressIndicator> action
   ) {
-    return lock.runWriteAction(action.getClass(), () -> {
+    return lock.runWriteActionBlocking(() -> {
       if (JBUIScale.isInitialized()) {
         @SuppressWarnings("DialogTitleCapitalization") var indicator = new PotemkinProgress(title, project, parentComponent, cancelText);
         indicator.runInSwingThread(() -> action.accept(indicator));
@@ -1129,7 +1120,7 @@ public final class ApplicationImpl extends ClientAwareComponentManager implement
     checkWriteActionAllowedOnCurrentThread();
     incrementBackgroundWriteActionCounter();
     try {
-      getThreadingSupport().runWriteAction(action.getClass(), runnableUnitFunction(action));
+      getThreadingSupport().runWriteActionBlocking(runnableUnitFunction(action));
     }
     finally {
       decrementBackgroundWriteActionCounter();
@@ -1141,7 +1132,7 @@ public final class ApplicationImpl extends ClientAwareComponentManager implement
     checkWriteActionAllowedOnCurrentThread();
     incrementBackgroundWriteActionCounter();
     try {
-      return getThreadingSupport().runWriteAction(computation.getClass(), computation::compute);
+      return getThreadingSupport().runWriteActionBlocking(computation::compute);
     }
     finally {
       decrementBackgroundWriteActionCounter();
@@ -1153,7 +1144,7 @@ public final class ApplicationImpl extends ClientAwareComponentManager implement
     checkWriteActionAllowedOnCurrentThread();
     incrementBackgroundWriteActionCounter();
     try {
-      return getThreadingSupport().runWriteAction(computation.getClass(), rethrowCheckedExceptions(computation));
+      return getThreadingSupport().runWriteActionBlocking(rethrowCheckedExceptions(computation));
     }
     finally {
       decrementBackgroundWriteActionCounter();
@@ -1236,7 +1227,7 @@ public final class ApplicationImpl extends ClientAwareComponentManager implement
 
   @Override
   public boolean tryRunReadAction(@NotNull Runnable action) {
-    return getThreadingSupport().tryRunReadAction(action);
+    return getThreadingSupport().tryRunReadAction(runnableUnitFunction(action));
   }
 
   @Override
@@ -1258,19 +1249,6 @@ public final class ApplicationImpl extends ClientAwareComponentManager implement
   }
 
   @Override
-  @SuppressWarnings("deprecation")
-  public @NotNull AccessToken acquireReadActionLock() {
-    PluginException.reportDeprecatedUsage("Application.acquireReadActionLock", "Use `runReadAction()` instead");
-    var cleanup = getThreadingSupport().acquireReadActionLock();
-    return new AccessToken() {
-      @Override
-      public void finish() {
-        cleanup.invoke();
-      }
-    };
-  }
-
-  @Override
   public boolean isWriteActionPending() {
     return getThreadingSupport().isWriteActionPending();
   }
@@ -1283,19 +1261,6 @@ public final class ApplicationImpl extends ClientAwareComponentManager implement
   @Override
   public boolean isWriteAccessAllowed() {
     return getThreadingSupport().isWriteAccessAllowed();
-  }
-
-  @Override
-  @SuppressWarnings("deprecation")
-  public @NotNull AccessToken acquireWriteActionLock(@NotNull Class<?> clazz) {
-    PluginException.reportDeprecatedUsage("Application#acquireWriteActionLock", "Use `runWriteAction()` instead");
-    var cleanup = getThreadingSupport().acquireWriteActionLock(clazz);
-    return new AccessToken() {
-      @Override
-      public void finish() {
-        cleanup.invoke();
-      }
-    };
   }
 
   @Override
@@ -1495,12 +1460,12 @@ public final class ApplicationImpl extends ClientAwareComponentManager implement
   }
 
   @Override
-  public void prohibitTakingLocksInsideAndRun(@NotNull Runnable runnable, boolean failSoftly, @NlsSafe String advice) {
-    getThreadingSupport().prohibitTakingLocksInsideAndRun(runnable, failSoftly, advice);
+  public void prohibitTakingLocksInsideAndRun(@NotNull Runnable runnable, @NlsSafe String advice) {
+    getThreadingSupport().prohibitTakingLocksInsideAndRun(runnableUnitFunction(runnable), advice);
   }
 
   @Override
-  public String isLockingProhibited() {
+  public String getLockProhibitedAdvice() {
     return getThreadingSupport().getLockingProhibitedAdvice();
   }
 
@@ -1513,17 +1478,6 @@ public final class ApplicationImpl extends ClientAwareComponentManager implement
   public void addSuspendingWriteActionListener(@NotNull WriteLockReacquisitionListener listener, @NotNull Disposable parentDisposable) {
     lock.setWriteLockReacquisitionListener(listener);
     Disposer.register(parentDisposable, () -> lock.removeWriteLockReacquisitionListener(listener));
-  }
-
-  @Override
-  public Pair<CoroutineContext, AccessToken> getLockStateAsCoroutineContext(CoroutineContext baseContext, boolean shared) {
-    var pair = getThreadingSupport().getPermitAsContextElement(baseContext, shared);
-    return new Pair<>(pair.getFirst(), new AccessToken() {
-      @Override
-      public void finish() {
-        pair.getSecond().invoke();
-      }
-    });
   }
 
   @Override

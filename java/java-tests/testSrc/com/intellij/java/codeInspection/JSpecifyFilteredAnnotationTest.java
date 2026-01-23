@@ -113,11 +113,23 @@ public class JSpecifyFilteredAnnotationTest extends LightJavaCodeInsightFixtureT
 
         new Pair<>("MultiBoundTypeVariableUnionNullToSelf.java", 62), // see: IDEA-377697
 
-        new Pair<>("WildcardCapturesToBoundOfTypeParameterNotToTypeVariableItself.java", 24), // see: IDEA-377699
+        new Pair<>("WildcardCapturesToBoundOfTypeParameterNotToTypeVariableItself.java", 24) ,// see: IDEA-377699
 
         new Pair<>("SelfType.java", 34),  // see: IDEA-377707 (also see the commented case in warning matchers)
         new Pair<>("SelfType.java", 43),  // see: IDEA-377707 (also see the commented case in warning matchers)
-        new Pair<>("OutOfBoundsTypeVariable.java", 21)  // see: IDEA-377707 (also see the commented case in warning matchers)
+        new Pair<>("OutOfBoundsTypeVariable.java", 21),  // see: IDEA-377707 (also see the commented case in warning matchers)
+        new Pair<>("TypeParameterBounds.java", 40), // see: IDEA-377707
+
+        new Pair<>("AugmentedInferenceAgreesWithBaseInference.java", 33), // see: IDEA-377683
+        new Pair<>("NullnessUnspecifiedTypeParameter.java", 33), // see: IDEA-377683
+        new Pair<>("TypeVariableMinusNullVsTypeVariable.java", 28), // see: IDEA-377683
+        new Pair<>("TypeVariableMinusNullVsTypeVariable.java", 30), // see: IDEA-377683
+
+        new Pair<>("ComplexParametric.java", 238), // see: IDEA-384752
+        new Pair<>("ComplexParametric.java", 243), // see: IDEA-384752
+        new Pair<>("ComplexParametric.java", 246), // see: IDEA-384752
+        new Pair<>("ComplexParametric.java", 261) // see: IDEA-384752
+
       )
     ),
     new SkipIndividuallyFilter( //cases to investigate later (with unspecified annotation and complicated to understand). (line number starts from 0)
@@ -178,9 +190,7 @@ public class JSpecifyFilteredAnnotationTest extends LightJavaCodeInsightFixtureT
         new Pair<>("SuperVsObject.java", 24), // see: IDEA-379303
         new Pair<>("SuperNullableForNonNullableTypeParameter.java", 27) // see: IDEA-379303
       )
-    ),
-    new CallWithParameterWithNestedGenericsFilter(), // see: IDEA-377682
-    new VariableWithNestedGenericsFilter() // see: IDEA-377683
+    )
   );
 
   private static final LightProjectDescriptor PROJECT_DESCRIPTOR = new DefaultLightProjectDescriptor() {
@@ -382,56 +392,6 @@ public class JSpecifyFilteredAnnotationTest extends LightJavaCodeInsightFixtureT
     }
   }
 
-  private static class CallWithParameterWithNestedGenericsFilter implements ErrorFilter {
-
-    @Override
-    public boolean filterActual(@NotNull PsiFile file,
-                                @NotNull String strippedText,
-                                int lineNumber,
-                                int startLineOffset,
-                                @NotNull String errorMessage) {
-      if (!errorMessage.contains("jspecify_nullness_mismatch")) return false;
-      PsiElement element = findElement(file, strippedText, lineNumber, startLineOffset);
-      PsiExpressionStatement statement = PsiTreeUtil.getParentOfType(element, PsiExpressionStatement.class, true);
-      if (statement == null) return false;
-      PsiExpression expression = statement.getExpression();
-      if (!(expression instanceof PsiCallExpression callExpression)) return false;
-      PsiMethod method = callExpression.resolveMethod();
-      if (method == null) return false;
-      return ContainerUtil.exists(method.getParameterList().getParameters(),
-                                  parameter -> parameter.getType() instanceof PsiClassType classType && classType.hasParameters());
-    }
-
-    @Override
-    public boolean filterExpected(@NotNull PsiElement psiElement, @NotNull String errorMessage) {
-      //filter only actual file
-      return false;
-    }
-  }
-
-  private static class VariableWithNestedGenericsFilter implements ErrorFilter {
-
-    @Override
-    public boolean filterActual(@NotNull PsiFile file,
-                                @NotNull String strippedText,
-                                int lineNumber,
-                                int startLineOffset,
-                                @NotNull String errorMessage) {
-      if (!errorMessage.contains("jspecify_nullness_mismatch")) return false;
-      PsiElement element = findElement(file, strippedText, lineNumber, startLineOffset);
-      PsiVariable variable = PsiTreeUtil.getParentOfType(element, PsiVariable.class, true);
-      if (variable == null) return false;
-      return variable.getType() instanceof PsiClassType classType && classType.hasParameters();
-    }
-
-    @Override
-    public boolean filterExpected(@NotNull PsiElement psiElement, @NotNull String errorMessage) {
-      //filter only actual file
-      return false;
-    }
-  }
-
-
   private static class SkipIndividuallyFilter implements ErrorFilter {
     private final Set<Pair<String, Integer>> places;
     private final Set<Pair<String, Integer>> unusedPlaces;
@@ -575,7 +535,9 @@ public class JSpecifyFilteredAnnotationTest extends LightJavaCodeInsightFixtureT
              "inspection.nullable.problems.at.local.variable" -> warnings.put(anchor, "jspecify_unrecognized_location");
         case "inspection.nullable.problems.Nullable.method.overrides.NotNull",
              "inspection.nullable.problems.NotNull.parameter.overrides.Nullable",
-             "assigning.a.collection.of.nullable.elements",
+             "complex.problem.with.nullability",
+             "assigning.a.class.with.nullable.elements",
+             "assigning.a.class.with.notnull.elements",
              "returning.a.class.with.nullable.arguments",
              "returning.a.class.with.notnull.arguments"
           //,  "non.null.type.argument.is.expected"  //todo see IDEA-377707

@@ -41,7 +41,7 @@
 
   <extensions defaultExtensionNs="com.intellij">
     <typedHandler implementation="com.intellij.grazie.ide.inspection.auto.GrazieTypedHandler"/>
-    <projectConfigurable parentId="proofread" instance="com.intellij.grazie.spellcheck.settings.SpellCheckerSettingsManager"
+    <projectConfigurable parentId="proofread" instance="com.intellij.grazie.spellcheck.settings.SpellCheckerConfigurable"
                          id="reference.settings.ide.settings.spelling"
                          key="spelling"
                          bundle="messages.SpellCheckerBundle" />
@@ -145,14 +145,6 @@
       <categoryKey>intention.category.natural.languages</categoryKey>
       <className>com.intellij.grazie.ide.inspection.ai.TranslateAction</className>
       <descriptionDirectoryName>TranslateAction</descriptionDirectoryName>
-    </intentionAction>
-
-    <intentionAction>
-      <language/>
-      <bundleName>messages.GrazieBundle</bundleName>
-      <categoryKey>intention.category.natural.languages</categoryKey>
-      <className>com.intellij.grazie.ide.inspection.ai.WordDefinitions</className>
-      <descriptionDirectoryName>WordDefinitions</descriptionDirectoryName>
     </intentionAction>
   </extensions>
 

@@ -54,6 +54,12 @@
 
     <action id="NotebookResetCellOutputSizeAction"
             class="com.intellij.notebooks.visualization.outputs.action.NotebookResetCellOutputSizeAction"/>
+
+    <action id="CellToolbarStickyVisibilityToggleAction"
+            class="com.intellij.notebooks.visualization.ui.cell.toolbar.CellToolbarStickyVisibilityToggleAction"/>
+
+    <action id="ShowToolbarForSelectedCellToggleAction"
+            class="com.intellij.notebooks.visualization.ui.cell.toolbar.ShowToolbarForSelectedCellToggleAction"/>
   </actions>
 
   <extensions defaultExtensionNs="com.intellij">
@@ -64,6 +70,7 @@
                                    order="last"/>
 
     <applicationService serviceImplementation="com.intellij.notebooks.visualization.settings.NotebookSettings"/>
+    <applicationSettings service="com.intellij.notebooks.visualization.settings.NotebookSettings"/>
   </extensions>
 
   <!-- New output inlays -->
@@ -107,6 +114,10 @@
 
     <notebookCellSelectionModelProvider language="Python"
                                         implementationClass="com.intellij.notebooks.visualization.PythonCellSelectionModelProvider"/>
+  </extensions>
+
+  <extensions defaultExtensionNs="com.intellij">
+    <notebooks.ui.cellCaretTracker implementation="com.intellij.notebooks.visualization.NotebookCellCaretTrackerImpl"/>
   </extensions>
 
   <extensions defaultExtensionNs="org.intellij.markdown">

@@ -554,9 +554,7 @@ public abstract class KtUsefulTestCase extends TestCase {
     }
 
     public boolean isPerformanceTest() {
-        String testName = getName();
-        String className = getClass().getSimpleName();
-        return TestFrameworkUtil.isPerformanceTest(testName, className);
+        return TestFrameworkUtil.isPerformanceTest(getName(), getClass());
     }
 
     /**
@@ -566,13 +564,13 @@ public abstract class KtUsefulTestCase extends TestCase {
      * For example: {@code public void testStressPSIFromDifferentThreads()}
      */
     public boolean isStressTest() {
-        return isStressTest(getName(), getClass().getName());
+        return isStressTest(getName(), getClass());
     }
 
-    private static boolean isStressTest(String testName, String className) {
-        return TestFrameworkUtil.isPerformanceTest(testName, className) ||
+    private static boolean isStressTest(String testName, Class<?> aClass) {
+        return TestFrameworkUtil.isPerformanceTest(testName, aClass) ||
                containsStressWords(testName) ||
-               containsStressWords(className);
+               containsStressWords(aClass.getSimpleName());
     }
 
     private static boolean containsStressWords(@Nullable String name) {

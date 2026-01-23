@@ -359,14 +359,10 @@ internal class BazelBuildFileGenerator(
     val result = ModuleList(community = community, ultimate = ultimate, skippedModules = skippedModules)
     for (module in (community + ultimate)) {
       val hasSources = module.sources.isNotEmpty()
-      val hasResources = module.resources.isNotEmpty()
+      result.deps.put(module, generateDeps(m2Repo = m2Repo, module = module, hasSources = hasSources, isTest = false, context = this))
+
       val hasTestSources = module.testSources.isNotEmpty()
       val hasTestResources = module.testResources.isNotEmpty()
-
-      if (hasSources || hasResources || !hasTestSources) {
-        result.deps.put(module, generateDeps(m2Repo, module = module, isTest = false, context = this, hasSources = hasSources))
-      }
-
       if (hasTestSources || hasTestResources || isTestClasspathModule(module)) {
         result.testDeps.put(module, generateDeps(m2Repo = m2Repo, module = module, hasSources = hasTestSources, isTest = true, context = this))
       }
@@ -582,17 +578,17 @@ internal class BazelBuildFileGenerator(
 
       @Suppress("CascadeIf")
       if (module.name == "fleet.util.multiplatform" || module.name == "intellij.platform.multiplatformSupport") {
-        option("exported_compiler_plugins", listOf("@lib//:expects-plugin"))
+        option("exported_compiler_plugins", listOf("@community//fleet/compiler-plugins/expects:expects-plugin"))
       }
       //else if (module.name == "fleet.rhizomedb") {
         // https://youtrack.jetbrains.com/issue/IJI-2662/RhizomedbCommandLineProcessor-requires-output-dir-but-we-dont-have-it-for-Bazel-compilation
         //option("exported_compiler_plugins", arrayOf("@lib//:rhizomedb-plugin"))
       //}
       else if (module.name == "fleet.rpc") {
-        option("exported_compiler_plugins", listOf("@lib//:rpc-plugin"))
+        option("exported_compiler_plugins", listOf("@community//fleet/compiler-plugins/rpc:rpc-plugin"))
       }
       else if (module.name == "fleet.noria.cells") {
-        option("exported_compiler_plugins", listOf("@lib//:noria-plugin"))
+        option("exported_compiler_plugins", listOf("@community//fleet/compiler-plugins/noria:noria-plugin"))
       }
 
       var deps = moduleList.deps.get(moduleDescriptor)
@@ -828,7 +824,7 @@ internal class BazelBuildFileGenerator(
     val parentDirDirName = when {
       baseBuildDir == ultimateRoot -> null
       baseBuildDir.parent == ultimateRoot -> "idea"
-      else -> baseBuildDir.parent.fileName.toString()
+      else -> baseBuildDir.parent?.fileName.toString()
     }
 
     return result
@@ -1023,13 +1019,13 @@ private fun computeKotlincOptions(buildFile: BuildFile, module: ModuleDescriptor
 
   //api_version
   handleArgument(K2JVMCompilerArguments::apiVersion) { apiVersion ->
-    if (apiVersion != null && apiVersion != "2.2") {
+    if (apiVersion != null && apiVersion != "2.3") {
       options.put("api_version", apiVersion)
     }
   }
   //language_version
   handleArgument(K2JVMCompilerArguments::languageVersion) { languageVersion ->
-    if (languageVersion != null && languageVersion != "2.2") {
+    if (languageVersion != null && languageVersion != "2.3") {
       options.put("language_version", languageVersion)
     }
   }
@@ -1050,6 +1046,12 @@ private fun computeKotlincOptions(buildFile: BuildFile, module: ModuleDescriptor
       options.put("plugin_options", pluginOptions.map {
         it.replace("${module.bazelBuildFileDir.invariantSeparatorsPathString}/", "${'$'}BASE_DIR$/${module.relativePathFromProjectRoot.invariantSeparatorsPathString}/")
       })
+    }
+  }
+  // progressive
+  handleArgument(K2JVMCompilerArguments::progressiveMode) {
+    if (!it) {
+      options.put("progressive", false)
     }
   }
   //x_allow_kotlin_package

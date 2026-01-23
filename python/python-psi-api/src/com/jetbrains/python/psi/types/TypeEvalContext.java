@@ -2,7 +2,6 @@
 package com.jetbrains.python.psi.types;
 
 import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.openapi.progress.ProcessCanceledException;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.ProjectFileIndex;
 import com.intellij.openapi.util.Pair;
@@ -19,6 +18,8 @@ import com.jetbrains.python.psi.*;
 import com.jetbrains.python.psi.impl.PyTypeProvider;
 import com.jetbrains.python.psi.resolve.PyResolveContext;
 import com.jetbrains.python.psi.resolve.RatedResolveResult;
+import com.jetbrains.python.psi.types.external.ExternalPyTypeResolver;
+import com.jetbrains.python.psi.types.external.ExternalPyTypeResolverProvider;
 import com.jetbrains.python.pyi.PyiLanguageDialect;
 import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
@@ -53,8 +54,8 @@ public sealed class TypeEvalContext {
 
   private final ThreadLocal<ProcessingContext> myProcessingContext = ThreadLocal.withInitial(ProcessingContext::new);
 
+  private ExternalPyTypeResolver externalTypeResolver = null;
   protected final Map<PyTypedElement, PyType> myEvaluated = getConcurrentMapForCaching();
-  protected final Map<PyTypedElement, PyType> myExternalEvaluated = getConcurrentMapForCaching();
   protected final Map<PyCallable, PyType> myEvaluatedReturn = getConcurrentMapForCaching();
   protected final Map<Pair<PyExpression, Object>, PyType> contextTypeCache = getConcurrentMapForCaching();
 
@@ -79,6 +80,9 @@ public sealed class TypeEvalContext {
 
   private TypeEvalContext(@NotNull TypeEvalConstraints constraints) {
     myConstraints = constraints;
+    if (constraints.myOrigin != null) {
+      externalTypeResolver = ExternalPyTypeResolverProvider.createTypeResolver(constraints.myOrigin.getProject());
+    }
   }
 
   @Override
@@ -220,7 +224,7 @@ public sealed class TypeEvalContext {
       return null;
     }
     AssumptionContext context = new AssumptionContext(this, element, type);
-    R result = null;
+    R result;
     try {
       result = func.apply(context);
     }
@@ -249,11 +253,7 @@ public sealed class TypeEvalContext {
       assertValid(cachedType, element);
       return cachedType;
     }
-    final PyType cachedExternalType = myExternalEvaluated.get(element);
-    if (cachedExternalType != null) {
-      assertValid(cachedExternalType, element);
-      return cachedExternalType;
-    }
+
     return null;
   }
 
@@ -264,11 +264,6 @@ public sealed class TypeEvalContext {
       return cachedType;
     }
     return null;
-  }
-
-  @ApiStatus.Experimental
-  public void putExternalType(PyTypedElement element, PyType type) {
-    myExternalEvaluated.put(element, type == null ? PyNullType.INSTANCE : type);
   }
 
   private static boolean isLibraryElement(@NotNull PsiElement element) {
@@ -305,35 +300,29 @@ public sealed class TypeEvalContext {
     if (knownType != null) {
       return knownType == PyNullType.INSTANCE ? null : knownType;
     }
+
+    PsiFile file = element.getContainingFile();
+
     return RecursionManager.doPreventingRecursion(
       Pair.create(element, this),
       false,
       () -> {
-        // Try external providers first
-        for (var provider : TypeEvalExternalTypeProvider.EP_NAME.getExtensionList()) {
-          try {
-            var provided = provider.provideType(element, this);
-            if (provided != null) {
-              var type = provided.get();
-              myExternalEvaluated.put(element, type == null ? PyNullType.INSTANCE : type);
-              return type;
-            }
-          }
-          catch (ProcessCanceledException e) {
-            throw e;
-          }
-          catch (Exception e) {
-            logger.warn("Exception during external type provider " + provider.getClass().getName(), e);
-          }
+        PyType type;
+
+        if (externalTypeResolver != null && externalTypeResolver.isSupportedForResolve(element)) {
+          type = externalTypeResolver.resolveType(element, this instanceof LibraryTypeEvalContext);
+        }
+        else {
+          type = element.getType(this, Key.INSTANCE);
         }
 
-        PyType type = element.getType(this, Key.INSTANCE);
         assertValid(type, element);
         myEvaluated.put(element, type == null ? PyNullType.INSTANCE : type);
         return type;
       }
     );
   }
+
 
   public @Nullable PyType getReturnType(final @NotNull PyCallable callable) {
     if (canDelegateToLibraryContext(callable)) {
@@ -422,7 +411,11 @@ public sealed class TypeEvalContext {
   }
 
   private static boolean inPyiFile(@NotNull PsiElement element) {
-    if (isPyiFile(element.getContainingFile())) {
+    PsiFile containingFile = element.getContainingFile();
+    if (containingFile == null) {
+      return false;
+    }
+    if (isPyiFile(containingFile)) {
       return true;
     }
     PsiFile contextFile = getContextFile(element);

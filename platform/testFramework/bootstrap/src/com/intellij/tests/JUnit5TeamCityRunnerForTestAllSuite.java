@@ -44,6 +44,10 @@ public final class JUnit5TeamCityRunnerForTestAllSuite {
       System.err.printf("Expected one or two arguments, got %d: %s%n", args.length, Arrays.toString(args));
       System.exit(1);
     }
+
+    TCExecutionListener listener = null;
+    Throwable caughtException = null;
+
     try {
       Launcher launcher = LauncherFactory.create(LauncherConfig.builder().enableLauncherSessionListenerAutoRegistration(true).build());
       ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
@@ -72,33 +76,46 @@ public final class JUnit5TeamCityRunnerForTestAllSuite {
         .selectors(selectors)
         .filters(filters.toArray(new Filter[0]))
         .build();
-      TCExecutionListener listener = new TCExecutionListener();
+      listener = new TCExecutionListener();
       TestPlan testPlan = launcher.discover(discoveryRequest);
       launcher.execute(testPlan, listener);
-      if (!listener.smthExecuted()) {
-        //see org.jetbrains.intellij.build.impl.TestingTasksImpl.NO_TESTS_ERROR
-        System.exit(42);
-      }
     }
     catch (Throwable e) {
+      caughtException = e;
       assertNoUnhandledExceptions("JUnit5TeamCityRunnerForTestAllSuite", e);
-      System.exit(1);
     }
     finally {
-      assertNoUnhandledExceptions("JUnit5TeamCityRunnerForTestAllSuite",null);
-      System.exit(0);
+      assertNoUnhandledExceptions("JUnit5TeamCityRunnerForTestAllSuite", null);
     }
+
+    // Determine exit code OUTSIDE of try/catch/finally to avoid finally overriding the exit code
+    int exitCode;
+    if (caughtException != null) {
+      exitCode = 1;
+    }
+    else if (!listener.smthExecuted()) {
+      // see org.jetbrains.intellij.build.impl.TestingTasksImpl.NO_TESTS_ERROR
+      exitCode = 42;
+    }
+    else if (listener.hasFailures()) {
+      exitCode = 1;
+    }
+    else {
+      exitCode = 0;
+    }
+
+    System.exit(exitCode);
   }
 
   private static PostDiscoveryFilter createPerformancePostDiscoveryFilter(ClassLoader classLoader)
     throws NoSuchMethodException, ClassNotFoundException, IllegalAccessException {
     final MethodHandle method = MethodHandles.publicLookup()
       .findStatic(Class.forName("com.intellij.testFramework.TestFrameworkUtil", true, classLoader),
-                  "isPerformanceTest", MethodType.methodType(boolean.class, String.class, String.class));
+                  "isPerformanceTest", MethodType.methodType(boolean.class, String.class, Class.class));
     return new PostDiscoveryFilter() {
-      private FilterResult isIncluded(String className, String methodName) {
+      private FilterResult isIncluded(Class<?> aClass, String methodName) {
         try {
-          if ((boolean)method.invokeExact(methodName, className)) {
+          if ((boolean)method.invokeExact(methodName, aClass)) {
             return FilterResult.included(null);
           }
           return FilterResult.excluded(null);
@@ -118,10 +135,10 @@ public final class JUnit5TeamCityRunnerForTestAllSuite {
           return FilterResult.included("No source for descriptor");
         }
         if (source instanceof MethodSource methodSource) {
-          return isIncluded(methodSource.getClassName(), methodSource.getMethodName());
+          return isIncluded(methodSource.getJavaClass(), methodSource.getMethodName());
         }
         if (source instanceof ClassSource classSource) {
-          return isIncluded(classSource.getClassName(), null);
+          return isIncluded(classSource.getJavaClass(), null);
         }
         return FilterResult.included("Unknown source type " + source.getClass());
       }
@@ -174,6 +191,7 @@ public final class JUnit5TeamCityRunnerForTestAllSuite {
     private TestPlan myTestPlan;
     private long myCurrentTestStart = 0;
     private int myFinishCount = 0;
+    private boolean myHasFailures = false;
     private static final int MAX_STACKTRACE_MESSAGE_LENGTH =
       Integer.getInteger("intellij.build.test.stacktrace.max.length", 100 * 1024);
 
@@ -200,6 +218,10 @@ public final class JUnit5TeamCityRunnerForTestAllSuite {
 
     public boolean smthExecuted() {
       return myCurrentTestStart != 0;
+    }
+
+    public boolean hasFailures() {
+      return myHasFailures;
     }
 
     @Override
@@ -253,6 +275,11 @@ public final class JUnit5TeamCityRunnerForTestAllSuite {
                                    TestExecutionResult.Status status,
                                    Throwable throwableOptional,
                                    String reason) {
+      // Track failures for exit code determination
+      if (status == TestExecutionResult.Status.FAILED) {
+        myHasFailures = true;
+      }
+
       if (testIdentifier.isTest()) {
         final long duration = getDuration();
         if (status == TestExecutionResult.Status.FAILED) {

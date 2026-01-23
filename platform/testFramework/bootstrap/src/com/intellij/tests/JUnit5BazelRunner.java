@@ -4,14 +4,8 @@ package com.intellij.tests;
 import com.intellij.tests.bazel.BazelJUnitOutputListener;
 import com.intellij.tests.bazel.IjSmTestExecutionListener;
 import com.intellij.tests.bazel.bucketing.BucketsPostDiscoveryFilter;
-import org.junit.platform.engine.DiscoverySelector;
-import org.junit.platform.engine.Filter;
-import org.junit.platform.engine.FilterResult;
-import org.junit.platform.engine.TestEngine;
-import org.junit.platform.engine.discovery.ClassNameFilter;
-import org.junit.platform.engine.discovery.DiscoverySelectors;
-import org.junit.platform.engine.discovery.MethodSelector;
-import org.junit.platform.engine.discovery.UniqueIdSelector;
+import org.junit.platform.engine.*;
+import org.junit.platform.engine.discovery.*;
 import org.junit.platform.launcher.*;
 import org.junit.platform.launcher.core.LauncherDiscoveryRequestBuilder;
 import org.junit.platform.launcher.core.LauncherFactory;
@@ -60,6 +54,8 @@ public final class JUnit5BazelRunner {
   private static final String jbEnvTestFilter = "JB_TEST_FILTER";
   // Allow rerun-failed selection via JUnit5 UniqueId list
   private static final String jbEnvTestUniqueIds = "JB_TEST_UNIQUE_IDS";
+  // Allow specifying test filter in JUnit5 format. Example: include-package=com.intellij.tests;exclude-classname=com.intellij.tests.IgnoredTest
+  private static final String jbEnvJunit5TestFilter = "JB_TEST_JUNIT5_FILTERS";
 
   private static final ClassLoader ourClassLoader = Thread.currentThread().getContextClassLoader();
   private static final Launcher launcher = LauncherFactory.create();
@@ -72,6 +68,7 @@ public final class JUnit5BazelRunner {
       .configurationParameter("junit.jupiter.extensions.autodetection.enabled", "true")
       .selectors(bazelTestSelectors)
       .filters(getTestFilters(bazelTestSelectors))
+      .filters(generateFiltersFromJbEnv().toArray(new Filter[0]))
       .build();
   }
 
@@ -99,9 +96,11 @@ public final class JUnit5BazelRunner {
       // set intellij.test.jars.location as a temporary workaround for debugger-agent.jar downloading
       System.setProperty("intellij.test.jars.location", bazelTestTestSrcDir);
 
+      System.setProperty("idea.is.unit.test", "true");
+
       if (Boolean.parseBoolean(System.getenv(jbEnvPrintSortedClasspath))) {
         Arrays.stream(System.getProperty("java.class.path")
-          .split(Pattern.quote(File.pathSeparator)))
+                        .split(Pattern.quote(File.pathSeparator)))
           .sorted()
           .toList()
           .forEach(x -> System.err.println("CLASSPATH " + x));
@@ -293,6 +292,32 @@ public final class JUnit5BazelRunner {
         }
       }
     }
+  }
+
+  /**
+   * Parses Junit5 filters from JB_TEST_JUNIT5_FILTERS environmental variable.
+   * <p>
+   * <b>Format</b>: filter_option_1=value_1;filter_option_2=value_2;...
+   * <br>
+   * <b>Example</b>: include-package=com.intellij.tests;exclude-classname=com.intellij.tests.IgnoredTest
+   *
+   * @see JUnit5FilterOption
+   */
+  private static List<Filter<?>> generateFiltersFromJbEnv() {
+    List<Filter<?>> out = new ArrayList<>();
+    String junitFilters = System.getenv(jbEnvJunit5TestFilter);
+    if (junitFilters != null && !junitFilters.isBlank()) {
+      for (String filter : junitFilters.split(";")) {
+        String[] parts = filter.split("=");
+        if (parts.length != 2) {
+          throw new IllegalArgumentException("Invalid JUnit5 filter: " + filter + ". Filter should be in format: <option>=<value>");
+        }
+        JUnit5FilterOption filterOption = JUnit5FilterOption.fromString(parts[0]);
+        String filterString = parts[1];
+        out.add(filterOption.toJunitFilter(filterString));
+      }
+    }
+    return out;
   }
 
   private static Filter<?>[] getTestFilters(List<? extends DiscoverySelector> bazelTestSelectors) {
@@ -594,6 +619,22 @@ public final class JUnit5BazelRunner {
     public void executionStarted(TestIdentifier testIdentifier) {
       if (testIdentifier.isTest()) {
         System.out.println("Started: " + testIdentifier.getDisplayName());
+      }
+    }
+
+    @Override
+    public void executionFinished(TestIdentifier testIdentifier, TestExecutionResult testExecutionResult) {
+      if (testIdentifier.isTest()) {
+        System.out.println("Finished: " + testIdentifier.getDisplayName() + " (" + testExecutionResult.getStatus() + ")");
+      }
+
+      if (testExecutionResult.getStatus() != TestExecutionResult.Status.SUCCESSFUL && testExecutionResult.getThrowable().isPresent()) {
+        Throwable t = testExecutionResult.getThrowable().get();
+        t.printStackTrace(System.err);
+        String message = t.getMessage();
+        if (message != null && !message.isBlank()) {
+          System.err.println(message);
+        }
       }
     }
 

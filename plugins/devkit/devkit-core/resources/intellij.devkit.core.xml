@@ -122,13 +122,6 @@
     <completion.contributor implementationClass="org.jetbrains.idea.devkit.completion.ExtensionOrderKeywordCompletionContributor"
                             language="XML"/>
 
-    <useScopeEnlarger implementation="org.jetbrains.idea.devkit.driver.RemoteUseScopeEnlarger"/>
-    <methodReferencesSearch implementation="org.jetbrains.idea.devkit.driver.RemoteMethodReferenceSearcher"/>
-    <overridingMethodsSearch implementation="org.jetbrains.idea.devkit.driver.RemoteMethodImplementationSearcher"/>
-    <allOverridingMethodsSearch implementation="org.jetbrains.idea.devkit.driver.RemoteMethodAllImplementationSearcher"/>
-    <directClassInheritorsSearch implementation="org.jetbrains.idea.devkit.driver.RemoteInterfaceDirectImplementationSearcher"/>
-    <classInheritorsSearch implementation="org.jetbrains.idea.devkit.driver.RemoteInterfaceImplementationSearcher"/>
-
     <highlightErrorFilter implementation="org.jetbrains.idea.devkit.highlighting.TestFragmentsErrorFilter"/>
 
     <registryKey defaultValue="false" description="Enables experimental new remote dev module in intellij repository"
@@ -556,6 +549,13 @@
     <localInspection language="XML" applyToDialects="false"
                      projectType="INTELLIJ_PLUGIN"
                      groupPathKey="inspections.group.path" groupKey="inspections.group.descriptor"
+                     enabledByDefault="true" level="WARNING"
+                     implementationClass="org.jetbrains.idea.devkit.inspections.ContentModuleWithoutDedicatedJpsModuleInspection"
+                     key="inspection.content.module.without.dedicated.jps.module.name"/>
+
+    <localInspection language="XML" applyToDialects="false"
+                     projectType="INTELLIJ_PLUGIN"
+                     groupPathKey="inspections.group.path" groupKey="inspections.group.descriptor"
                      enabledByDefault="true" level="ERROR"
                      implementationClass="org.jetbrains.idea.devkit.inspections.WrongPluginModuleAliasInspection"
                      key="inspection.plugin.module.alias.name"/>
@@ -734,15 +734,13 @@
 
     <!-- INTERNAL -->
     <consoleFilterProvider implementation="org.jetbrains.idea.devkit.run.ModulePathFilterProvider"/>
+    <registryKey key="devkit.module.hyperlink.show.chooser" defaultValue="false"
+                 description="Show file chooser when clicking module names in console (iml + descriptor xml)"/>
 
     <properties.extendedUseScopeProvider implementation="org.jetbrains.idea.devkit.references.BundleExtendedUseScopeProvider"/>
     <properties.spellcheckerMnemonicsTokenizer implementation="org.jetbrains.idea.devkit.spellchecker.DevKitMnemonicsTokenizer"/>
 
     <useScopeEnlarger implementation="org.jetbrains.idea.devkit.references.DomTargetUseScopeEnlarger"/>
-
-    <registryKey key="devkit.compose.hot.reload.enabled" defaultValue="false" description="Enable 'Compose Hot Reload' agent for run configurations"/>
-    <registryKey key="devkit.compose.hot.reload.agent.version" defaultValue="" description="'Compose Hot Reload' agent version override"/>
-    <runConfigurationExtension implementation="org.jetbrains.idea.devkit.composeHotReload.ComposeHotReloadCommandLinePatcher" />
 
     <postStartupActivity implementation="org.jetbrains.idea.devkit.templates.UpdateFileTemplatesSchemeToProjectActivity"/>
   </extensions>
@@ -780,10 +778,6 @@
       language="JAVA"
       implementationClass="org.jetbrains.idea.devkit.threadingModelHelper.java.JavaLockReqPsiOps"/>
   </extensions>
-  <applicationListeners>
-    <listener class="org.jetbrains.idea.devkit.composeHotReload.ComposeHotReloadCommandLinePatcher$ComposeHotReloadRegistryListener"
-              topic="com.intellij.openapi.util.registry.RegistryValueListener" />
-  </applicationListeners>
 
   <extensions defaultExtensionNs="JavaScript.JsonSchema">
     <ProviderFactory implementation="org.jetbrains.idea.devkit.inspections.metaInformation.MetaInformationJsonSchemaProviderFactory"/>

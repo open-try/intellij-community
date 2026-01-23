@@ -13,7 +13,6 @@ import com.intellij.openapi.actionSystem.ex.ComboBoxAction
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.EDT
 import com.intellij.openapi.application.UI
-import com.intellij.openapi.application.impl.BorderPainterHolder
 import com.intellij.openapi.application.impl.InternalUICustomization
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.wm.IdeRootPaneNorthExtension
@@ -23,7 +22,9 @@ import com.intellij.openapi.wm.impl.status.InfoAndProgressPanel.AutoscrollLimit
 import com.intellij.openapi.wm.impl.status.InfoAndProgressPanel.ScrollableToSelected
 import com.intellij.platform.navbar.frontend.NavBarRootPaneExtension.NavBarWrapperPanel
 import com.intellij.platform.navbar.frontend.ui.NavBarBorder
-import com.intellij.ui.*
+import com.intellij.ui.ClientProperty
+import com.intellij.ui.ExperimentalUI
+import com.intellij.ui.ScrollPaneFactory
 import com.intellij.ui.components.JBScrollBar
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.components.JBThinOverlappingScrollBar
@@ -31,7 +32,6 @@ import com.intellij.ui.hover.HoverListener
 import com.intellij.ui.scale.JBUIScale.scale
 import com.intellij.util.concurrency.AppExecutorUtil
 import com.intellij.util.ui.JBInsets
-import com.intellij.util.ui.JBSwingUtilities
 import com.intellij.util.ui.JBUI
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
@@ -100,7 +100,7 @@ internal class NavBarRootPaneExtension : IdeRootPaneNorthExtension {
   // used externally
   abstract class NavBarWrapperPanel(layout: LayoutManager?) : JPanel(layout), UISettingsListener {
     override fun getComponentGraphics(graphics: Graphics): Graphics {
-      return JBSwingUtilities.runGlobalCGTransform(this, super.getComponentGraphics(graphics))
+      return InternalUICustomization.runGlobalCGTransformWithInactiveFrameSupport(this, super.getComponentGraphics(graphics))
     }
   }
 }
@@ -276,17 +276,6 @@ internal open class MyNavBarWrapperPanel(private val project: Project, useAsComp
   }
 }
 
-internal class MyTopNavBarWrapperPanel(project: Project, useAsComponent: Boolean) :
-  MyNavBarWrapperPanel(project, useAsComponent), BorderPainterHolder {
-
-  override var borderPainter: BorderPainter = DefaultBorderPainter()
-
-  override fun paintChildren(g: Graphics) {
-    super.paintChildren(g)
-    borderPainter.paintAfterChildren(this, g)
-  }
-}
-
 private fun updateScrollBarFlippedState(location: NavBarLocation?, scrollPane: JScrollPane) {
   if (ExperimentalUI.isNewNavbar) {
     val effectiveLocation = location ?: UISettings.getInstance().navBarLocation
@@ -446,7 +435,7 @@ private object TopNavBarMode : NavBarMode {
   override suspend fun configure(project: Project, statusBar: StatusBar, uiSettings: UISettings): MyNavBarWrapperPanel {
     return withContext(Dispatchers.EDT) {
       setStatusBarCentralWidget(statusBar, null)
-      val panel = MyTopNavBarWrapperPanel(project, useAsComponent = true)
+      val panel = MyNavBarWrapperPanel(project, useAsComponent = true)
       InternalUICustomization.getInstance()?.registerWindowBackgroundComponent(panel)
       panel
     }
