@@ -15,6 +15,10 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * @deprecated use {@link org.jetbrains.plugins.terminal.starter.ShellCustomizer} instead
+ */
+@Deprecated
 public abstract class LocalTerminalCustomizer {
   public static final ExtensionPointName<LocalTerminalCustomizer> EP_NAME =
     ExtensionPointName.create("org.jetbrains.plugins.terminal.localTerminalCustomizer");
@@ -87,8 +91,10 @@ public abstract class LocalTerminalCustomizer {
   }
 
   /**
+   * @deprecated use {@link org.jetbrains.plugins.terminal.settings.TerminalSettingsProvider} instead
    * @return configurable for customizer-specific options
    */
+  @Deprecated
   public @Nullable UnnamedConfigurable getConfigurable(@NotNull Project project) {
     return null;
   }

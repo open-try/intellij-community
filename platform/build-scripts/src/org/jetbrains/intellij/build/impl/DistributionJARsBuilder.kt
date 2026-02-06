@@ -8,6 +8,7 @@ import com.intellij.util.io.Compressor
 import io.opentelemetry.api.trace.Span
 import io.opentelemetry.context.Context
 import io.opentelemetry.extension.kotlin.asContextElement
+import kotlinx.collections.immutable.persistentListOf
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.CoroutineScope
@@ -160,7 +161,7 @@ internal suspend fun buildDistribution(
   contentReport
 }
 
-private fun generateCoreClassPath(
+private suspend fun generateCoreClassPath(
   platformLayout: PlatformLayout,
   context: BuildContext,
   platformDistribution: List<DistributionFileEntry>,
@@ -310,6 +311,7 @@ fun getPluginLayoutsByJpsModuleNames(modules: Collection<String>, productLayout:
     if (toPublish && layouts.size == 2 && layouts.get(0).bundlingRestrictions != layouts.get(1).bundlingRestrictions) {
       layouts.retainAll { it.bundlingRestrictions == PluginBundlingRestrictions.MARKETPLACE }
     }
+    layouts.retainAll { it.bundlingRestrictions.includeInDistribution != PluginDistribution.CROSS_PLATFORM_DIST_ONLY }
     for (layout in layouts) {
       check(result.add(layout)) {
         "Plugin layout for module $moduleName is already added (duplicated module name?)"
@@ -317,6 +319,32 @@ fun getPluginLayoutsByJpsModuleNames(modules: Collection<String>, productLayout:
     }
   }
   return result
+}
+
+/**
+ * Collects executable file patterns from bundled plugins for a specific platform distribution.
+ * Returns patterns relative to distribution root (e.g., "plugins/plugin-name/bin/script.sh").
+ */
+internal fun collectPluginExecutablePatterns(
+  context: BuildContext,
+  os: OsFamily,
+  arch: JvmArchitecture,
+  libc: LibcImpl
+): Sequence<String> {
+  val productLayout = context.productProperties.productLayout
+  val bundledPluginLayouts = getPluginLayoutsByJpsModuleNames(
+    modules = productLayout.bundledPluginModules,
+    productLayout = productLayout
+  )
+
+  val platformDistribution = SupportedDistribution(os, arch, libc)
+  return bundledPluginLayouts.asSequence()
+    .flatMap { plugin ->
+      val patterns = plugin.executablePatterns[platformDistribution] ?: persistentListOf()
+      patterns.asSequence().map { pattern ->
+        "plugins/${plugin.directoryName}/$pattern"
+      }
+    }
 }
 
 private fun basePath(moduleName: String, outputProvider: ModuleOutputProvider): Path {
@@ -386,7 +414,7 @@ internal suspend fun layoutPlatformDistribution(
     }
 }
 
-private fun patchKeyMapWithAltClickReassignedToMultipleCarets(moduleOutputPatcher: ModuleOutputPatcher, context: BuildContext) {
+private suspend fun patchKeyMapWithAltClickReassignedToMultipleCarets(moduleOutputPatcher: ModuleOutputPatcher, context: BuildContext) {
   if (!context.productProperties.reassignAltClickToMultipleCarets) {
     return
   }
@@ -473,6 +501,10 @@ internal fun satisfiesBundlingRequirements(plugin: PluginLayout, osFamily: OsFam
     return false
   }
 
+  if (bundlingRestrictions.includeInDistribution == PluginDistribution.CROSS_PLATFORM_DIST_ONLY) {
+    return false
+  }
+
   if (context.options.useReleaseCycleRelatedBundlingRestrictionsForContentReport) {
     val isNightly = context.isNightlyBuild
     val isEap = context.applicationInfo.isEAP
@@ -481,6 +513,7 @@ internal fun satisfiesBundlingRequirements(plugin: PluginLayout, osFamily: OsFam
       PluginDistribution.ALL -> true
       PluginDistribution.NOT_FOR_RELEASE -> isNightly || isEap
       PluginDistribution.NOT_FOR_PUBLIC_BUILDS -> isNightly
+      PluginDistribution.CROSS_PLATFORM_DIST_ONLY -> false
     }
     if (!distributionCondition) {
       return false

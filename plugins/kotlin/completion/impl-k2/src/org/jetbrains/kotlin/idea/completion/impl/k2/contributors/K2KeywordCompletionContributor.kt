@@ -4,18 +4,24 @@ package org.jetbrains.kotlin.idea.completion.impl.k2.contributors
 import com.intellij.psi.util.parents
 import org.jetbrains.kotlin.analysis.api.KaSession
 import org.jetbrains.kotlin.idea.completion.KeywordCompletion
-import org.jetbrains.kotlin.idea.completion.contributors.keywords.OverrideKeywordHandler
-import org.jetbrains.kotlin.idea.completion.contributors.keywords.ReturnKeywordHandler
-import org.jetbrains.kotlin.idea.completion.contributors.keywords.SuperKeywordHandler
-import org.jetbrains.kotlin.idea.completion.contributors.keywords.ThisKeywordHandler
-import org.jetbrains.kotlin.idea.completion.impl.k2.*
+import org.jetbrains.kotlin.idea.completion.impl.k2.contributors.keywords.OverrideKeywordHandler
+import org.jetbrains.kotlin.idea.completion.impl.k2.contributors.keywords.SuperKeywordHandler
+import org.jetbrains.kotlin.idea.completion.impl.k2.contributors.keywords.ReturnKeywordHandler
+import org.jetbrains.kotlin.idea.completion.impl.k2.contributors.keywords.ThisKeywordHandler
+import org.jetbrains.kotlin.idea.completion.impl.k2.K2CompletionSectionContext
+import org.jetbrains.kotlin.idea.completion.impl.k2.K2CompletionSetupScope
+import org.jetbrains.kotlin.idea.completion.impl.k2.K2ContributorSectionPriority
+import org.jetbrains.kotlin.idea.completion.impl.k2.K2SimpleCompletionContributor
+import org.jetbrains.kotlin.idea.completion.impl.k2.allowsOnlyNamedArguments
 import org.jetbrains.kotlin.idea.completion.impl.k2.contributors.keywords.ActualKeywordHandler
+import org.jetbrains.kotlin.idea.completion.impl.k2.isAfterRangeOperator
+import org.jetbrains.kotlin.idea.completion.impl.k2.isAfterRangeToken
 import org.jetbrains.kotlin.idea.completion.implCommon.keywords.BreakContinueKeywordHandler
 import org.jetbrains.kotlin.idea.completion.keywords.CompletionKeywordHandlerProvider
 import org.jetbrains.kotlin.idea.completion.keywords.CompletionKeywordHandlers
 import org.jetbrains.kotlin.idea.completion.keywords.DefaultCompletionKeywordHandlerProvider
 import org.jetbrains.kotlin.idea.completion.keywords.createLookups
-import org.jetbrains.kotlin.idea.completion.weighers.Weighers.applyWeighs
+import org.jetbrains.kotlin.idea.completion.impl.k2.weighers.Weighers.applyWeighs
 import org.jetbrains.kotlin.idea.util.positionContext.*
 import org.jetbrains.kotlin.lexer.KtTokens
 import org.jetbrains.kotlin.platform.jvm.isJvm
@@ -39,7 +45,7 @@ internal class K2KeywordCompletionContributor : K2SimpleCompletionContributor<Ko
                 BreakContinueKeywordHandler(KtTokens.BREAK_KEYWORD),
                 ActualKeywordHandler(context.importStrategyDetector),
                 OverrideKeywordHandler(context.importStrategyDetector),
-                ThisKeywordHandler(context.prefixMatcher),
+                ThisKeywordHandler(context.prefixMatcher, context.weighingContext.expectedType),
                 SuperKeywordHandler,
             )
         }
@@ -81,7 +87,7 @@ internal class K2KeywordCompletionContributor : K2SimpleCompletionContributor<Ko
                 ?: listOf(lookupElement)
 
             lookups.map { it.applyWeighs() }
-                .forEach { context.addElement(it) }
+                .forEach { addElement(it) }
         }
     }
 

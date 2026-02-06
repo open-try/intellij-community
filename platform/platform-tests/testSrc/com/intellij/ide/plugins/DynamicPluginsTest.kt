@@ -56,10 +56,27 @@ import com.intellij.platform.plugins.parser.impl.elements.ModuleLoadingRuleValue
 import com.intellij.platform.plugins.testFramework.PluginSetTestBuilder
 import com.intellij.platform.testFramework.loadDescriptorInTest
 import com.intellij.platform.testFramework.loadExtensionWithText
-import com.intellij.platform.testFramework.plugins.*
+import com.intellij.platform.testFramework.plugins.PluginSpec
+import com.intellij.platform.testFramework.plugins.PluginTestHandle
+import com.intellij.platform.testFramework.plugins.action
+import com.intellij.platform.testFramework.plugins.appService
+import com.intellij.platform.testFramework.plugins.buildDir
+import com.intellij.platform.testFramework.plugins.buildDistribution
+import com.intellij.platform.testFramework.plugins.buildMainJar
+import com.intellij.platform.testFramework.plugins.content
+import com.intellij.platform.testFramework.plugins.dependencies
+import com.intellij.platform.testFramework.plugins.depends
+import com.intellij.platform.testFramework.plugins.dependsIntellijModulesLang
+import com.intellij.platform.testFramework.plugins.extension
+import com.intellij.platform.testFramework.plugins.extensionPoint
+import com.intellij.platform.testFramework.plugins.extensions
+import com.intellij.platform.testFramework.plugins.includePackageClassFiles
+import com.intellij.platform.testFramework.plugins.module
+import com.intellij.platform.testFramework.plugins.plugin
 import com.intellij.platform.testFramework.setPluginClassLoaderForMainAndSubPlugins
 import com.intellij.platform.testFramework.unloadAndUninstallPlugin
 import com.intellij.psi.PsiFile
+import com.intellij.testFramework.DisposableRule
 import com.intellij.testFramework.EdtRule
 import com.intellij.testFramework.IndexingTestUtil
 import com.intellij.testFramework.ProjectRule
@@ -94,6 +111,10 @@ class DynamicPluginsTest {
   @Rule
   @JvmField
   val projectRule = ProjectRule()
+
+  @Rule
+  @JvmField
+  val testDisposable = DisposableRule()
 
   // FIXME in-memory fs does not work, NonShareableJavaZipFilePool wants .toFile()
   //@Rule
@@ -1156,21 +1177,42 @@ class DynamicPluginsTest {
       content {
         module("foo.module") {
           extensions("""
-            <applicationService interface="${ServiceInterface::class.qualifiedName}" 
-                                implementation="${OverriddenService::class.qualifiedName}"
+            <applicationService serviceInterface="${ServiceInterface::class.qualifiedName}" 
+                                serviceImplementation="${OverriddenService::class.qualifiedName}"
                                 overrides="true"/>
           """.trimIndent())
           includePackageClassFiles<OverriddenService>()
         }
       }
       extensions("""
-        <applicationService interface="${ServiceInterface::class.qualifiedName}" 
-                            implementation="${DefaultService::class.qualifiedName}"/>
+        <applicationService serviceInterface="${ServiceInterface::class.qualifiedName}" 
+                            serviceImplementation="${DefaultService::class.qualifiedName}"/>
       """.trimIndent())
       includePackageClassFiles<DefaultService>()
     }.buildDir(pluginsDir.resolve("foo"))
     val foo = loadDescriptorInTest(pluginsDir.resolve("foo"))
     assertThat(DynamicPlugins.loadPlugin(foo)).isFalse
+  }
+
+  @Test
+  fun `test ide-plugins-allow-dynamic-services-overrides registry flag`() {
+    for (dynamicServiceOverridesAllowed in listOf(true, false)) {
+      Registry.get("ide.plugins.allow.dynamic.services.overrides").setValue(dynamicServiceOverridesAllowed, testDisposable.disposable)
+      plugin("foo") {
+        extensions("""
+        <applicationService serviceInterface="${ServiceInterface::class.qualifiedName}" 
+                            serviceImplementation="${DefaultService::class.qualifiedName}"
+                            open="true"/>
+                            
+        <applicationService serviceInterface="${ServiceInterface::class.qualifiedName}" 
+                            serviceImplementation="${DefaultService::class.qualifiedName}"
+                            overrides="true"/>
+      """.trimIndent())
+        includePackageClassFiles<DefaultService>()
+      }.buildDir(pluginsDir.resolve("foo"))
+      val foo = loadDescriptorInTest(pluginsDir.resolve("foo"))
+      assertThat(DynamicPlugins.loadPlugin(foo)).isEqualTo(dynamicServiceOverridesAllowed)
+    }
   }
 
   @Test
