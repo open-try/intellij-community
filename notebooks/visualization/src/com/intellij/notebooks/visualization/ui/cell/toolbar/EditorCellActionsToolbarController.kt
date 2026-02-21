@@ -10,6 +10,7 @@ import com.intellij.notebooks.visualization.controllers.selfUpdate.SelfManagedCe
 import com.intellij.notebooks.visualization.settings.NotebookSettings
 import com.intellij.notebooks.visualization.ui.DataProviderComponent
 import com.intellij.notebooks.visualization.ui.EditorCell
+import com.intellij.notebooks.visualization.ui.NotebookUiUtils.intersectsEvenIfEmpty
 import com.intellij.notebooks.visualization.ui.jupyterToolbars.JupyterCellActionsToolbar
 import com.intellij.notebooks.visualization.ui.notebookEditor
 import com.intellij.notebooks.visualization.ui.providers.bounds.JupyterBoundsChangeHandler
@@ -209,8 +210,11 @@ internal class EditorCellActionsToolbarController(
     // We have also EditorInspectionsActionToolbar in the top right editor corner, and we want to protect from overlap.
     val statusComponent = (editor.scrollPane as? JBScrollPane)?.statusComponent
     if (statusComponent != null) {
-      if(result.intersects(statusComponent.bounds.apply { y += editor.contentComponent.visibleRect.y })) {
-        result.y += statusComponent.height
+      val statusComponentLocation = SwingUtilities.convertPoint(statusComponent, Point(0, 0), editor.contentComponent)
+      val statusComponentBounds = Rectangle(statusComponentLocation, statusComponent.size)
+
+      if (result.intersectsEvenIfEmpty(statusComponentBounds)) {
+        result.y = statusComponentBounds.y + statusComponentBounds.height
       }
     }
 

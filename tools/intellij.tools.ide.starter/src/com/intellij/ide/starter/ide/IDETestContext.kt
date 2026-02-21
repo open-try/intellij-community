@@ -1,3 +1,5 @@
+@file:Suppress("RAW_RUN_BLOCKING")
+
 package com.intellij.ide.starter.ide
 
 import com.intellij.ide.starter.buildTool.BuildTool
@@ -79,11 +81,12 @@ open class IDETestContext(
   companion object {
     const val OPENTELEMETRY_FILE: String = "opentelemetry.json"
 
-    private val SEARCH_EVERYWHERE_REGISTRY_KEYS: List<String> get() = listOf(
+    val SEARCH_EVERYWHERE_REGISTRY_KEYS: List<String> get() = listOf(
       "search.everywhere.new.enabled",
       "search.everywhere.new.rider.enabled",
       "search.everywhere.new.idea.enabled",
       "search.everywhere.new.pycharm.enabled",
+      "search.everywhere.new.clion.enabled",
       "search.everywhere.new.cwm.client.enabled",
       "search.everywhere.new.allow.ab"
     )
@@ -275,6 +278,11 @@ open class IDETestContext(
     configureLoggers(LogLevel.TRACE, "com.intellij.openapi.externalSystem")
   }
 
+  fun disableGotItTooltips(): IDETestContext =
+    applyVMOptionsPatch {
+      disableGotItTooltips()
+    }
+
   fun wipeSystemDir(): IDETestContext = apply {
     if (!preserveSystemDir) {
       //TODO: it would be better to allocate a new context instead of wiping the folder
@@ -337,12 +345,10 @@ open class IDETestContext(
     addSystemProperty("llm.show.ai.promotion.window.on.start", false)
   }
 
-  @Suppress("TestOnlyProblems")
   fun disableSplitSearchEverywhere(): IDETestContext = applyVMOptionsPatch {
     SEARCH_EVERYWHERE_REGISTRY_KEYS.forEach { addSystemProperty(it, false) }
   }
 
-  @Suppress("TestOnlyProblems")
   fun enableSplitSearchEverywhere(): IDETestContext = applyVMOptionsPatch {
     SEARCH_EVERYWHERE_REGISTRY_KEYS.forEach { addSystemProperty(it, true) }
   }
@@ -426,7 +432,18 @@ open class IDETestContext(
     configure: IDERunContext.() -> Unit = {},
   ) =
     runBlocking {
-      runIdeSuspending(commandLine, commands, runTimeout, useStartupScript, launchName, expectedKill, expectedExitCode, collectNativeThreads, stdOut, configure)
+      runIdeSuspending(
+        commandLine = commandLine,
+        commands = commands,
+        runTimeout = runTimeout,
+        useStartupScript = useStartupScript,
+        launchName = launchName,
+        expectedKill = expectedKill,
+        expectedExitCode = expectedExitCode,
+        collectNativeThreads = collectNativeThreads,
+        stdOut = stdOut,
+        configure = configure,
+      )
     }
 
   /**
@@ -822,6 +839,17 @@ open class IDETestContext(
     return this
   }
 
+  fun setThirdPartyPluginsAllowed(allowed: Boolean = true): IDETestContext {
+    writeConfigFile("options/updates.xml", """
+      <application>
+        <component name="UpdatesConfigurable">
+          <option name="THIRD_PARTY_PLUGINS_ALLOWED" value="$allowed" />
+        </component>
+      </application>
+    """)
+    return this
+  }
+
   fun enableDocRendering(): IDETestContext {
     writeConfigFile("options/editor.xml", """
       <application>
@@ -870,4 +898,6 @@ open class IDETestContext(
     """)
     return this
   }
+
+
 }

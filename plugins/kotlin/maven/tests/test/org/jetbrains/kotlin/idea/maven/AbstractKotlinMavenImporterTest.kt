@@ -56,7 +56,6 @@ import org.jetbrains.kotlin.idea.formatter.KotlinObsoleteStyleGuide
 import org.jetbrains.kotlin.idea.formatter.KotlinOfficialStyleGuide
 import org.jetbrains.kotlin.idea.formatter.kotlinCodeStyleDefaults
 import org.jetbrains.kotlin.idea.framework.KotlinSdkType
-import org.jetbrains.kotlin.idea.jps.toJpsVersionAgnosticKotlinBundledPath
 import org.jetbrains.kotlin.idea.notification.asText
 import org.jetbrains.kotlin.idea.notification.catchNotificationTextAsync
 import org.jetbrains.kotlin.idea.notification.catchNotificationsAsync
@@ -3647,12 +3646,12 @@ abstract class AbstractKotlinMavenImporterTest(private val createStdProjectFolde
             assertModules("project")
             assertEquals(
                 listOf(
-                    KotlinArtifacts.allopenCompilerPlugin,
-                    KotlinArtifacts.kotlinxSerializationCompilerPlugin,
-                    KotlinArtifacts.lombokCompilerPlugin,
-                    KotlinArtifacts.noargCompilerPlugin,
-                    KotlinArtifacts.samWithReceiverCompilerPlugin,
-                ).map { it.toJpsVersionAgnosticKotlinBundledPath() },
+                    KotlinArtifacts.allopenCompilerPluginPath,
+                    KotlinArtifacts.kotlinxSerializationCompilerPluginPath,
+                    KotlinArtifacts.lombokCompilerPluginPath,
+                    KotlinArtifacts.noargCompilerPluginPath,
+                    KotlinArtifacts.samWithReceiverCompilerPluginPath,
+                ).map { it.toString() },
                 facetSettings.compilerArguments?.pluginClasspaths?.sorted()
             )
         }
@@ -3920,6 +3919,15 @@ abstract class AbstractKotlinMavenImporterTest(private val createStdProjectFolde
                 Assert.assertEquals("1.2", apiLevel!!.versionString)
                 Assert.assertEquals("1.2", compilerArguments!!.apiVersion)
             }
+        }
+    }
+
+    object TestVersions {
+        object Kotlin {
+            const val KOTLIN_2_3_10 = "2.3.10"
+            const val KOTLIN_2_3_20 = "2.3.20-Beta2"
+
+            const val LATEST_STABLE = "2.3.10"
         }
     }
 }

@@ -67,12 +67,13 @@ import com.intellij.util.ThreeState;
 import com.intellij.util.concurrency.AppExecutorUtil;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.xdebugger.XExpression;
+import com.intellij.xdebugger.DapMode;
 import com.intellij.xdebugger.breakpoints.SuspendPolicy;
 import com.intellij.xdebugger.breakpoints.XBreakpoint;
 import com.intellij.xdebugger.breakpoints.XLineBreakpoint;
 import com.intellij.xdebugger.impl.XDebugSessionImpl;
 import com.intellij.xdebugger.impl.XDebuggerHistoryManager;
-import com.intellij.xdebugger.impl.XDebuggerUtilImpl;
+import com.intellij.xdebugger.impl.ui.DebuggerUIUtil;
 import com.intellij.xdebugger.impl.breakpoints.XBreakpointBase;
 import com.intellij.xdebugger.impl.breakpoints.XBreakpointUtil;
 import com.intellij.xdebugger.impl.breakpoints.XExpressionImpl;
@@ -366,7 +367,7 @@ public abstract class Breakpoint<P extends JavaBreakpointProperties> implements 
       runAction(evaluationContext, event);
     }
     catch (final EvaluateException ex) {
-      if (ApplicationManager.getApplication().isUnitTestMode()) {
+      if (ApplicationManager.getApplication().isUnitTestMode() && !DapMode.isDap()) {
         System.out.println(ex.getMessage());
         return false;
       }
@@ -724,7 +725,7 @@ public abstract class Breakpoint<P extends JavaBreakpointProperties> implements 
   }
 
   protected boolean isLogExpressionEnabled() {
-    if (XDebuggerUtilImpl.isEmptyExpression(myXBreakpoint.getLogExpressionObject())) {
+    if (DebuggerUIUtil.isEmptyExpression(myXBreakpoint.getLogExpressionObject())) {
       return false;
     }
     return !getLogMessage().isEmpty();
@@ -846,7 +847,7 @@ public abstract class Breakpoint<P extends JavaBreakpointProperties> implements 
   @Override
   public boolean isConditionEnabled() {
     XExpression condition = myXBreakpoint.getConditionExpression();
-    if (XDebuggerUtilImpl.isEmptyExpression(condition)) {
+    if (DebuggerUIUtil.isEmptyExpression(condition)) {
       return false;
     }
     return !getCondition().isEmpty();

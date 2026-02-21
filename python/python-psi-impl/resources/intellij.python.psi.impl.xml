@@ -194,6 +194,10 @@
 
     <daemon.changeLocalityDetector implementation="com.jetbrains.python.inspections.PyChangeLocalityDetector"/>
 
+    <applicationService serviceInterface="com.jetbrains.python.psi.types.PyTypeEvaluationStatisticsService"
+                        serviceImplementation="com.jetbrains.python.psi.types.PyTypeEvaluationStatisticsServiceImpl"/>
+    <statistics.counterUsagesCollector implementationClass="com.jetbrains.python.psi.types.PyTypeEvaluationCollector"/>
+
     <localInspection language="Python" shortName="PyUnusedLocalInspection" suppressId="PyUnusedLocal" bundle="messages.PyPsiBundle" key="INSP.NAME.unused" groupKey="INSP.GROUP.python" enabledByDefault="true" level="WEAK WARNING" implementationClass="com.jetbrains.python.inspections.unusedLocal.PyUnusedLocalInspection"/>
     <localInspection language="Python" shortName="PyRedundantParenthesesInspection" suppressId="PyRedundantParentheses" bundle="messages.PyPsiBundle" key="INSP.NAME.redundant.parentheses" groupKey="INSP.GROUP.python" enabledByDefault="true" level="WEAK WARNING" implementationClass="com.jetbrains.python.inspections.PyRedundantParenthesesInspection"/>
     <localInspection language="Python" shortName="PySimplifyBooleanCheckInspection" suppressId="PySimplifyBooleanCheck" bundle="messages.PyPsiBundle" key="INSP.NAME.check.can.be.simplified" groupKey="INSP.GROUP.python" enabledByDefault="true" level="WEAK WARNING" implementationClass="com.jetbrains.python.inspections.PySimplifyBooleanCheckInspection"/>
@@ -279,7 +283,11 @@
     <localInspection language="Python" shortName="PyNewTypeInspection" suppressId="PyNewType" bundle="messages.PyPsiBundle" key="INSP.NAME.new.type" groupKey="INSP.GROUP.python" enabledByDefault="true" level="WARNING" implementationClass="com.jetbrains.python.inspections.PyNewTypeInspection"/>
     <localInspection language="Python" shortName="PyInvalidEscapeSequenceInspection" suppressId="PyInvalidEscapeSequence" bundle="messages.PyPsiBundle" key="INSP.NAME.invalid.escape.sequence" groupKey="INSP.GROUP.python" enabledByDefault="true" level="WARNING" implementationClass="com.jetbrains.python.inspections.PyInvalidEscapeSequenceInspection"/>
     <localInspection language="Python" shortName="PyPatternInspection" suppressId="PyPattern" bundle="messages.PyPsiBundle" key="INSP.NAME.patterns" groupKey="INSP.GROUP.python" enabledByDefault="true" level="WARNING" implementationClass="com.jetbrains.python.inspections.PyPatternInspection"/>
-
+    <localInspection language="Python" shortName="PySuspiciousBooleanConditionInspection" suppressId="PySuspiciousBooleanCondition"
+                     bundle="messages.PyPsiBundle" key="INSP.NAME.suspicious.boolean.condition" groupKey="INSP.GROUP.python"
+                     enabledByDefault="true" level="WARNING"
+                     implementationClass="com.jetbrains.python.inspections.PySuspiciousBooleanConditionInspection"/>
+    <localInspection language="Python" shortName="PyVarianceInspection" suppressId="PyVariance" bundle="messages.PyPsiBundle" key="INSP.NAME.variance.checker" groupKey="INSP.GROUP.python" enabledByDefault="true" level="WARNING" implementationClass="com.jetbrains.python.inspections.PyVarianceInspection"/>
     <intentionAction>
       <language>Python</language>
       <className>com.jetbrains.python.codeInsight.intentions.PyConvertMethodToPropertyIntention</className>
@@ -683,6 +691,4 @@
     <pyModuleMembersProvider implementation="com.jetbrains.python.tensorFlow.PyTensorFlowModuleMembersProvider"/>
     <pyiStubSuppressor implementation="com.jetbrains.python.tensorFlow.TensorflowPyiStubsSuppressor"/>
   </extensions>
-
-
 </idea-plugin>

@@ -98,7 +98,7 @@ internal class BackendJavaDebuggerSessionApi : JavaDebuggerSessionApi {
 
     for (javaValue in javaValues) {
       withDebugContext(javaValue.evaluationContext.suspendContext) {
-        javaValue.setRenderer(renderer, null)
+        javaValue.setRenderer(renderer)
       }
     }
     for (xValueModel in xValueModels) {
@@ -217,7 +217,12 @@ private fun dumpItemDtos(allDumpItems: List<DumpItem>, maxItems: Int): ThreadDum
                           isDeadLocked = it.isDeadLocked,
                           stackTraceIndex = stackTraceIndex,
                           iconToolTipIndex = iconToolTipToIndex[it.iconToolTip]!!.toByte(),
-                          firstLine = firstLine)
+                          firstLine = firstLine,
+                          isContainer = it.isContainer,
+                          treeId = it.treeId,
+                          parentTreeId = it.parentTreeId,
+                          canBeHidden = it.canBeHidden
+    )
   }
 
   return ThreadDumpWithAwaitingDependencies(items = items,

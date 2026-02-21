@@ -8,6 +8,7 @@ import com.intellij.externalProcessAuthHelper.AuthenticationGate
 import com.intellij.externalProcessAuthHelper.RestrictingAuthenticationGate
 import com.intellij.notification.NotificationAction
 import com.intellij.notification.NotificationType
+import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.progress.EmptyProgressIndicator
 import com.intellij.openapi.progress.ProcessCanceledException
@@ -260,7 +261,7 @@ internal class GitFetchSupportImpl(private val project: Project) : GitFetchSuppo
     val params = fetchTarget.asParams()
     val repository = fetchTarget.repository
     val remote = fetchTarget.remote
-    val result = git.fetch(fetchTarget.repository, remote, listOf(progressListener), authenticationGate, *params)
+    val result = git.fetch(fetchTarget.repository, remote, listOf(progressListener), authenticationGate, fetchTarget.authMode, *params)
     val pruned = result.output.mapNotNull { getPrunedRef(it) }
     if (result.success()) {
       BackgroundTaskUtil.syncPublisher(repository.project, GIT_AUTHENTICATION_SUCCESS).authenticationSucceeded(repository, remote)
@@ -322,6 +323,8 @@ internal class GitFetchSupportImpl(private val project: Project) : GitFetchSuppo
 
     private val isFailed = results.values.any { !it.totallySuccessful() }
 
+    override fun isSuccessful(): Boolean = !isFailed
+
     override fun showNotification() {
       doShowNotification()
     }
@@ -351,10 +354,22 @@ internal class GitFetchSupportImpl(private val project: Project) : GitFetchSuppo
 
     private fun showSuccessNotification() {
       val title = GitBundle.message("notification.title.fetch.success")
-      val message = buildMessage(null)
+      val autoFetchService = project.service<GitAutoFetchNotificationsService>()
+      val shouldShowAutoFetchNotification = autoFetchService.shouldShow()
+      val message = if (shouldShowAutoFetchNotification) {
+        autoFetchService.getSuggestionMessage()
+      } else {
+        buildMessage(null)
+      }
       val notification = VcsNotifier.standardNotification()
         .createNotification(title, message, NotificationType.INFORMATION)
       notification.setDisplayId(GitNotificationIdsHolder.FETCH_RESULT)
+
+      if (shouldShowAutoFetchNotification) {
+        autoFetchService.createActions().forEach { notification.addAction(it) }
+        notification.setSuggestionType(true)
+      }
+
       vcsNotifier.notify(notification)
     }
 

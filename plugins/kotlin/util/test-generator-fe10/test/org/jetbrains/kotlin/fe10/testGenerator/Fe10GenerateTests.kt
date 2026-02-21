@@ -6,7 +6,6 @@ import com.intellij.testFramework.TestIndexingModeSupporter.IndexingMode
 import org.jetbrains.kotlin.AbstractDataFlowValueRenderingTest
 import org.jetbrains.kotlin.addImport.AbstractK1AddImportTest
 import org.jetbrains.kotlin.addImportAlias.AbstractK1AddImportAliasTest53
-import org.jetbrains.kotlin.asJava.classes.AbstractIdeCompiledLightClassesByFqNameTest
 import org.jetbrains.kotlin.asJava.classes.AbstractIdeLightClassesByFqNameTest
 import org.jetbrains.kotlin.asJava.classes.AbstractIdeLightClassesByPsiTest
 import org.jetbrains.kotlin.checkers.AbstractJavaAgainstKotlinBinariesCheckerTest
@@ -765,6 +764,9 @@ private fun assembleWorkspace(): TWorkspace = workspace(KotlinPluginMode.K1) {
             model("codeInsight/surroundWith/functionLiteral", testMethodName = "doTestWithFunctionLiteralSurrounder")
             model("codeInsight/surroundWith/withIfExpression", testMethodName = "doTestWithSurroundWithIfExpression")
             model("codeInsight/surroundWith/withIfElseExpression", testMethodName = "doTestWithSurroundWithIfElseExpression")
+            model("codeInsight/surroundWith/while", testMethodName = "doTestWithWhileSurrounder")
+            model("codeInsight/surroundWith/doWhile", testMethodName = "doTestWithDoWhileSurrounder")
+            model("codeInsight/surroundWith/for", testMethodName = "doTestWithForSurrounder")
         }
 
         testClass<AbstractK1JoinLinesTest> (generatedClassName = "org.jetbrains.kotlin.idea.intentions.declarations.JoinLinesTestGenerated") {
@@ -834,6 +836,9 @@ private fun assembleWorkspace(): TWorkspace = workspace(KotlinPluginMode.K1) {
                     "convertFromMultiDollarToRegularString", // K2-only
                     "javaCollectionsWithNullableTypes", // K2-only
                     "kdocResolutionResultHasChanged", // K2-only
+                    "replaceManualRangeWithIndicesCalls", // K2-only
+                    "convertLongToDuration", // K2-only
+                    "customComponentDestructuringMigration", // K2-only
                 )
             )
         }
@@ -1498,21 +1503,6 @@ private fun assembleWorkspace(): TWorkspace = workspace(KotlinPluginMode.K1) {
                     "jvmExposeBoxed", // K2 feature
                     "k2", // relevant only for K2
                 )
-            )
-        }
-
-        testClass<AbstractIdeCompiledLightClassesByFqNameTest> {
-            model(
-                "asJava/lightClasses/lightClassByFqName",
-                excludedDirectories = listOf(
-                    "local",
-                    "compilationErrors",
-                    "ideRegression",
-                    "script",
-                    "withTestCompilerPluginEnabled", // relevant only for K2
-                    "k2", // relevant only for K2
-                ),
-                pattern = KT_OR_KTS_WITHOUT_DOTS,
             )
         }
     }

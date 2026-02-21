@@ -5,10 +5,14 @@ import com.intellij.openapi.Disposable
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.projectRoots.Sdk
 import com.intellij.openapi.util.Disposer
+import com.intellij.serviceContainer.AlreadyDisposedException
+import com.intellij.util.IncorrectOperationException
+import com.jetbrains.python.packaging.PyPackageUtil
 import com.jetbrains.python.packaging.bridge.PythonPackageManagementServiceBridge
 import com.jetbrains.python.packaging.requirementsTxt.PythonRequirementTxtSdkUtils
 import com.jetbrains.python.packaging.utils.PyPackageCoroutine
 import com.jetbrains.python.sdk.PythonSdkAdditionalData
+import com.jetbrains.python.sdk.PythonSdkUpdater
 import com.jetbrains.python.sdk.getOrCreateAdditionalData
 import kotlinx.coroutines.CoroutineScope
 import java.util.UUID
@@ -26,10 +30,36 @@ internal class PythonPackageManagerServiceImpl(private val serviceScope: Corouti
     val cacheKey = (sdk.getOrCreateAdditionalData()).uuid
 
     return cache.computeIfAbsent(cacheKey) {
-      val createdSdk = PythonPackageManagerProvider.EP_NAME.extensionList.firstNotNullOf { it.createPackageManagerForSdk(project, sdk) }
-      Disposer.register(PyPackageCoroutine.getInstance(project), createdSdk)
+      val vfsListenerDisposable = Disposer.newDisposable("VFS listener for ${sdk.name} in scope of ${project.name}")
+
+      if (sdk is Disposable) {
+        val localCache = cache
+        try {
+          Disposer.register(sdk, Disposable { localCache.remove(cacheKey) })
+          Disposer.register(sdk, Disposable { Disposer.dispose(vfsListenerDisposable) })
+        }
+        catch (e: IncorrectOperationException) {
+          throw AlreadyDisposedException("Requesting a package manager for an already disposed SDK $sdk, ${e.localizedMessage}")
+        }
+      }
+
+      val manager = PythonPackageManagerProvider.EP_NAME.extensionList.firstNotNullOf { it.createPackageManagerForSdk(project, sdk) }
+      try {
+        Disposer.register(PyPackageCoroutine.getInstance(project), manager)
+        Disposer.register(manager, vfsListenerDisposable)
+      }
+      catch (e: IncorrectOperationException) {
+          throw AlreadyDisposedException("Requesting a package manager for an already disposed Project $project, ${e.localizedMessage}")
+      }
+
+      PyPackageUtil.runOnChangeUnderInterpreterPaths(sdk, vfsListenerDisposable) {
+        PythonSdkUpdater.scheduleUpdate(sdk, project)
+      }
+
+      // I don't think it should be here
       PythonRequirementTxtSdkUtils.migrateRequirementsTxtPathFromModuleToSdk(project, sdk)
-      createdSdk
+
+      manager
     }
   }
 

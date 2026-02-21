@@ -329,6 +329,9 @@ object CommunityLibraryLicenses {
     LibraryLicense("Detekt Compose Rules", libraryName = "io.nlopez.compose.rules.detekt", url = "https://github.com/mrmans0n/compose-rules")
       .apache("https://github.com/mrmans0n/compose-rules/blob/main/LICENSE.md"),
 
+    LibraryLicense("Directory Watcher", libraryName = "directory-watcher", url = "https://github.com/gmethvin/directory-watcher")
+      .apache("https://github.com/gmethvin/directory-watcher/blob/master/LICENSE"),
+
     LibraryLicense("docutils", version = "0.12", attachedTo = "intellij.python", url = "https://docutils.sourceforge.io/")
       .public("https://sourceforge.net/p/docutils/code/HEAD/tree/trunk/docutils/COPYING.rst"),
 
@@ -391,6 +394,10 @@ object CommunityLibraryLicenses {
       .mit("https://github.com/3breadt/dd-plist/blob/master/LICENSE.txt"),
 
     LibraryLicense(libraryName = "Gradle", url = "https://gradle.org/")
+      .apache("https://github.com/gradle/gradle/blob/master/LICENSE")
+      .suppliedByOrganizations("Gradle Inc."),
+
+    LibraryLicense(libraryName = "Gradle Tooling API", url = "https://gradle.org/")
       .apache("https://github.com/gradle/gradle/blob/master/LICENSE")
       .suppliedByOrganizations("Gradle Inc."),
 
@@ -572,9 +579,6 @@ object CommunityLibraryLicenses {
     LibraryLicense("Jakarta ORO", libraryName = "OroMatcher", url = "https://jakarta.apache.org/oro/")
       .apache("https://svn.apache.org/repos/asf/jakarta/oro/trunk/LICENSE")
       .suppliedByPersons("Daniel Savarese", "Jon S. Stevens", "Takashi Okamoto", "Mark Murphy", "Michael Davey", "Harald Kuhn"),
-
-    LibraryLicense("Jarchivelib", libraryName = "rauschig.jarchivelib", url = "https://github.com/thrau/jarchivelib")
-      .apache("https://github.com/thrau/jarchivelib/blob/master/LICENSE"),
 
     LibraryLicense("Java-WebSocket", libraryName = "Java-WebSocket", url = "https://github.com/TooTallNate/Java-WebSocket")
       .mit("https://github.com/TooTallNate/Java-WebSocket/blob/master/LICENSE"),
@@ -1068,8 +1072,20 @@ object CommunityLibraryLicenses {
       .apache("https://github.com/open-telemetry/opentelemetry-java/blob/main/LICENSE")
       .suppliedByOrganizations("The OpenTelemetry Authors"),
 
+    LibraryLicense(libraryName = "opentelemetry-exporter-otlp-library", url = "https://opentelemetry.io/")
+      .apache("https://github.com/open-telemetry/opentelemetry-java/blob/main/LICENSE")
+      .suppliedByOrganizations("The OpenTelemetry Authors"),
+
+    LibraryLicense(libraryName = "opentelemetry-exporter-sender-jdk", url = "https://opentelemetry.io/")
+      .apache("https://github.com/open-telemetry/opentelemetry-java/blob/main/LICENSE")
+      .suppliedByOrganizations("The OpenTelemetry Authors"),
+
     LibraryLicense(libraryName = "opentelemetry-extension-kotlin", url = "https://opentelemetry.io/")
       .apache("https://github.com/open-telemetry/opentelemetry-java/blob/main/LICENSE")
+      .suppliedByOrganizations("The OpenTelemetry Authors"),
+
+    LibraryLicense(libraryName = "opentelemetry-sdk-autoconfigure-spi", url = "https://opentelemetry.io/")
+      .apache("https://github.com/open-telemetry/semantic-conventions-java/blob/main/LICENSE")
       .suppliedByOrganizations("The OpenTelemetry Authors"),
 
     LibraryLicense(libraryName = "opentelemetry-semconv", url = "https://opentelemetry.io/")
@@ -1397,7 +1413,7 @@ object CommunityLibraryLicenses {
     jetbrainsLibrary("ai.grazie.spell.hunspell.en"),
     jetbrainsLibrary("cloud-config-client"),
     jetbrainsLibrary("com.jetbrains.fus.reporting.ap.validation.all"),
-    jetbrainsLibrary("com.jetbrains.fus.reporting.api"),
+    jetbrainsLibrary("com.jetbrains.fus.reporting.fus-api"),
     jetbrainsLibrary("completion-log-events"),
     jetbrainsLibrary("completion-performance-kotlin"),
     jetbrainsLibrary("completion-ranking-cpp-exp"),

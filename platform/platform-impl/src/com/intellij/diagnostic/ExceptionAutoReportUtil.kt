@@ -88,9 +88,7 @@ object ExceptionAutoReportUtil {
     return Pair(submitter, plugin)
   }
 
-  private fun isDefaultSubmitter(submitter: ITNReporter): Boolean {
-    return submitter.javaClass == ITNReporter::class.java
-  }
+  private fun isDefaultSubmitter(submitter: ITNReporter): Boolean = submitter.javaClass == ITNReporter::class.java
 }
 
 internal class ReporterIdForEAAutoReporters : AboutPopupDescriptionProvider {

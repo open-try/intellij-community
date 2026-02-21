@@ -1,6 +1,7 @@
 package com.intellij.grazie.utils;
 
 import ai.grazie.nlp.langs.Language;
+import ai.grazie.nlp.stripper.PrefixStripper;
 import com.intellij.codeInspection.InspectionProfile;
 import com.intellij.codeInspection.LocalInspectionTool;
 import com.intellij.codeInspection.ex.InspectionProfileImpl;
@@ -10,6 +11,7 @@ import com.intellij.grazie.GrazieConfig;
 import com.intellij.grazie.ide.inspection.grammar.GrazieInspection;
 import com.intellij.grazie.jlanguage.Lang;
 import com.intellij.grazie.text.TextContent;
+import com.intellij.grazie.text.TextContent.TextDomain;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.Editor;
@@ -31,8 +33,8 @@ import org.jetbrains.annotations.Nullable;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Set;
-import java.util.regex.Pattern;
 
+import static com.intellij.grazie.ide.inspection.grammar.GrazieInspection.MAX_TEXT_LENGTH_IN_PSI_ELEMENT;
 import static com.intellij.grazie.text.TextExtractor.findAllTextContents;
 
 
@@ -40,7 +42,7 @@ public final class HighlightingUtil {
 
   public static final Comparator<TextContent> BY_TEXT_START = Comparator.comparing(tc -> tc.textOffsetToFile(0));
 
-  public static Set<TextContent.TextDomain> checkedDomains() {
+  public static Set<TextDomain> checkedDomains() {
     return GrazieInspection.Companion.checkedDomains();
   }
 
@@ -53,7 +55,7 @@ public final class HighlightingUtil {
   }
 
   public static boolean isTooLargeText(List<TextContent> texts) {
-    return texts.stream().mapToInt(t -> t.length()).sum() > 50_000;
+    return texts.stream().mapToInt(t -> t.length()).sum() > MAX_TEXT_LENGTH_IN_PSI_ELEMENT;
   }
 
   public static void applyTextChanges(Document document, List<StringOperation> changes) {
@@ -68,44 +70,31 @@ public final class HighlightingUtil {
       .orElse(null);
   }
 
-  private static final Pattern trackerIssuePrefix = Pattern.compile("\\s*([A-Z]\\w+-\\d+):?\\s+.*");
-
   public static int stripPrefix(TextContent content) {
-    int start = 0;
-    String text = content.toString();
-
     if (CommitMessage.isCommitMessage(content.getContainingFile())) {
-      if (text.startsWith("[")) {
-        int rBrace = text.indexOf(']');
-        if (rBrace >= 1 && rBrace <= 30) {
-          start = rBrace + 1;
-        }
-      } else {
-        int colon = text.indexOf(':');
-        if (colon >= 1 && colon <= 30 && text.substring(0, colon).chars().filter(Character::isWhitespace).count() <= 1) {
-          start = colon + 1;
-        }
-      }
-
-      var issueMatch = trackerIssuePrefix.matcher(text.substring(start));
-
-      if (issueMatch.matches()) {
-        start += issueMatch.group(1).length() + 1;
-      }
+      return PrefixStripper.stripPrefix(content);
     }
-
-    while (start < content.length() && Character.isWhitespace(content.charAt(start))) {
+    int start = 0;
+    while (start < content.length() && isSpace(content.charAt(start))) {
       start++;
     }
-
     return start;
   }
 
   public static List<TextContent> getCheckedFileTexts(FileViewProvider vp) {
+    Set<TextDomain> domains = checkedDomains();
+    return ContainerUtil.filter(getAllFileTexts(vp), tc -> domains.contains(tc.getDomain()));
+  }
+
+  public static List<TextContent> getAllFileTexts(FileViewProvider vp) {
     return CachedValuesManager.getManager(vp.getManager().getProject()).getCachedValue(vp, () -> {
-      List<TextContent> contents = ContainerUtil.sorted(findAllTextContents(vp, checkedDomains()), BY_TEXT_START);
+      List<TextContent> contents = ContainerUtil.sorted(findAllTextContents(vp, TextDomain.ALL), BY_TEXT_START);
       return CachedValueProvider.Result.create(contents, vp.getAllFiles().getFirst(), grazieConfigTracker());
     });
+  }
+
+  public static boolean isSpace(Character symbol) {
+    return Character.isWhitespace(symbol) || Character.isSpaceChar(symbol);
   }
 
   public static boolean isLowercase(@NotNull CharSequence content) {

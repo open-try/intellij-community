@@ -26,6 +26,7 @@
                     dynamic="true"/>
     <extensionPoint name="importing.afterImportConfigurator" interface="org.jetbrains.idea.maven.importing.MavenAfterImportConfigurator"
                     dynamic="true"/>
+
     <extensionPoint name="projectResolutionContributor" interface="org.jetbrains.idea.maven.project.MavenProjectResolutionContributor"
                     dynamic="true"/>
     <extensionPoint name="compiler" interface="org.jetbrains.idea.maven.importing.MavenCompilerExtension" dynamic="true"/>
@@ -38,6 +39,10 @@
 
     <extensionPoint name="repositoryProvider" interface="org.jetbrains.idea.maven.indices.MavenRepositoryProvider"
                     dynamic="true"/>
+
+
+    <extensionPoint name="runner.executionConfigurator"
+                    interface="org.jetbrains.idea.maven.execution.run.MavenExecutionConfiguratorProvider" dynamic="true"/>
     <extensionPoint name="executionEnvironmentProvider"
                     interface="org.jetbrains.idea.maven.execution.build.MavenExecutionEnvironmentProvider" dynamic="true"/>
     <extensionPoint name="artifactBuilder" interface="org.jetbrains.idea.maven.execution.build.MavenArtifactBuilder" dynamic="true"/>
@@ -121,7 +126,7 @@
     <projectService
       serviceInterface="org.jetbrains.idea.maven.server.MavenServerResultTransformer"
       serviceImplementation="org.jetbrains.idea.maven.server.MavenServerResultTransformerImpl"/>
-    <projectService serviceInterface="org.jetbrains.idea.maven.project.MavenProjectsManager" open="true"
+    <projectService serviceInterface="org.jetbrains.idea.maven.project.MavenProjectsManager"
                     serviceImplementation="org.jetbrains.idea.maven.project.MavenProjectsManagerEx"/>
     <projectService serviceImplementation="org.jetbrains.idea.maven.navigator.MavenProjectsNavigator"/>
     <projectService serviceImplementation="org.jetbrains.idea.maven.tasks.MavenShortcutsManager"/>
@@ -379,7 +384,6 @@
     <statistics.projectUsagesCollector implementation="org.jetbrains.idea.maven.statistics.MavenSettingsCollector"/>
     <statistics.counterUsagesCollector implementationClass="org.jetbrains.idea.maven.statistics.MavenActionsUsagesCollector"/>
     <statistics.counterUsagesCollector implementationClass="org.jetbrains.idea.maven.statistics.MavenImportCollector"/>
-    <statistics.counterUsagesCollector implementationClass="org.jetbrains.idea.maven.statistics.MavenDependencyInsertionCollector"/>
     <statistics.counterUsagesCollector implementationClass="org.jetbrains.idea.maven.statistics.MavenIndexUsageCollector"/>
     <statistics.projectUsagesCollector implementation="org.jetbrains.idea.maven.statistics.MavenPluginCollector"/>
     <statistics.projectUsagesCollector implementation="org.jetbrains.idea.maven.statistics.MavenLibraryScopesCollector"/>

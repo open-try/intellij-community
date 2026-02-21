@@ -50,6 +50,11 @@ public class KtParameterHintsProviderTestGenerated extends AbstractKtParameterHi
         runTest("../../idea/tests/testData/codeInsight/hints/arguments/contextParametersMultipleWithArgument.kt");
     }
 
+    @TestMetadata("contextParametersReceiverFunction.kt")
+    public void testContextParametersReceiverFunction() throws Exception {
+        runTest("../../idea/tests/testData/codeInsight/hints/arguments/contextParametersReceiverFunction.kt");
+    }
+
     @TestMetadata("contextParametersSimple.kt")
     public void testContextParametersSimple() throws Exception {
         runTest("../../idea/tests/testData/codeInsight/hints/arguments/contextParametersSimple.kt");
@@ -68,6 +73,11 @@ public class KtParameterHintsProviderTestGenerated extends AbstractKtParameterHi
     @TestMetadata("contextParametersUnusedMultipleWithArgument.kt")
     public void testContextParametersUnusedMultipleWithArgument() throws Exception {
         runTest("../../idea/tests/testData/codeInsight/hints/arguments/contextParametersUnusedMultipleWithArgument.kt");
+    }
+
+    @TestMetadata("contextParametersWithLabeledLambda.kt")
+    public void testContextParametersWithLabeledLambda() throws Exception {
+        runTest("../../idea/tests/testData/codeInsight/hints/arguments/contextParametersWithLabeledLambda.kt");
     }
 
     @TestMetadata("contextParametersWithNested.kt")
@@ -98,6 +108,11 @@ public class KtParameterHintsProviderTestGenerated extends AbstractKtParameterHi
     @TestMetadata("invokeCallsParameterNamesWithContextReceivers.kt")
     public void testInvokeCallsParameterNamesWithContextReceivers() throws Exception {
         runTest("../../idea/tests/testData/codeInsight/hints/arguments/invokeCallsParameterNamesWithContextReceivers.kt");
+    }
+
+    @TestMetadata("javaClsParameterNames.kt")
+    public void testJavaClsParameterNames() throws Exception {
+        runTest("../../idea/tests/testData/codeInsight/hints/arguments/javaClsParameterNames.kt");
     }
 
     @TestMetadata("javaParameters.kt")

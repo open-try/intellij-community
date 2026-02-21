@@ -1026,6 +1026,17 @@ public final class AllIconsKeys {
     /** 16x16 */ 
     @GeneratedFromIntelliJSources
     public static final @NotNull IntelliJIconKey Overhead = new IntelliJIconKey("debugger/overhead.svg", "expui/debugger/overhead.svg", AllIconsKeys.class);
+
+    @GeneratedFromIntelliJSources
+    public static final class PinToTop {
+      /** 16x16 */ 
+      @GeneratedFromIntelliJSources
+      public static final @NotNull IntelliJIconKey PinnedItem = new IntelliJIconKey("expui/debugger/pinToTop/pinnedItem.svg", "expui/debugger/pinToTop/pinnedItem.svg", AllIconsKeys.class);
+      /** 16x16 */ 
+      @GeneratedFromIntelliJSources
+      public static final @NotNull IntelliJIconKey UnpinnedItem = new IntelliJIconKey("expui/debugger/pinToTop/unpinnedItem.svg", "expui/debugger/pinToTop/unpinnedItem.svg", AllIconsKeys.class);
+    }
+
     /** 16x16 */ 
     @GeneratedFromIntelliJSources
     public static final @NotNull IntelliJIconKey PromptInput = new IntelliJIconKey("debugger/promptInput.svg", "expui/debugger/promptInput.svg", AllIconsKeys.class);
@@ -1667,6 +1678,9 @@ public final class AllIconsKeys {
     /** 16x16 */ 
     @GeneratedFromIntelliJSources
     public static final @NotNull IntelliJIconKey Locate = new IntelliJIconKey("general/locate.svg", "expui/general/locate.svg", AllIconsKeys.class);
+    /** 16x16 */ 
+    @GeneratedFromIntelliJSources
+    public static final @NotNull IntelliJIconKey LockedUltimate = new IntelliJIconKey("expui/general/lockedUltimate.svg", "expui/general/lockedUltimate.svg", AllIconsKeys.class);
     /** 16x16 */ 
     @GeneratedFromIntelliJSources
     public static final @NotNull IntelliJIconKey Menu = new IntelliJIconKey("expui/general/menu.svg", "expui/general/menu.svg", AllIconsKeys.class);

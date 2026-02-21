@@ -24,7 +24,6 @@ generics_syntax_infer_variance.py
 generics_typevartuple_basic.py
 generics_typevartuple_overloads.py
 generics_typevartuple_specialization.py
-generics_variance.py
 generics_variance_inference.py
 literals_literalstring.py
 literals_semantics.py
@@ -46,5 +45,4 @@ specialtypes_any.py
 specialtypes_never.py
 specialtypes_promotions.py
 specialtypes_type.py
-tuples_type_form.py
 typeddicts_extra_items.py

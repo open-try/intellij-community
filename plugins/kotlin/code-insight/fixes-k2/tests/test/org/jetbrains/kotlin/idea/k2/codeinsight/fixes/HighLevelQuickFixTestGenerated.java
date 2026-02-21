@@ -10803,6 +10803,11 @@ public abstract class HighLevelQuickFixTestGenerated extends AbstractHighLevelQu
                 runTest("../../../idea/tests/testData/quickfix/override/nothingToOverride/addTypeParameter2.kt");
             }
 
+            @TestMetadata("changeFunctionGenericsReciever.kt")
+            public void testChangeFunctionGenericsReciever() throws Exception {
+                runTest("../../../idea/tests/testData/quickfix/override/nothingToOverride/changeFunctionGenericsReciever.kt");
+            }
+
             @TestMetadata("changeFunctionReciever.kt")
             public void testChangeFunctionReciever() throws Exception {
                 runTest("../../../idea/tests/testData/quickfix/override/nothingToOverride/changeFunctionReciever.kt");
@@ -10856,6 +10861,11 @@ public abstract class HighLevelQuickFixTestGenerated extends AbstractHighLevelQu
             @TestMetadata("changeReturnType.kt")
             public void testChangeReturnType() throws Exception {
                 runTest("../../../idea/tests/testData/quickfix/override/nothingToOverride/changeReturnType.kt");
+            }
+
+            @TestMetadata("changeReturnTypeGenerics.kt")
+            public void testChangeReturnTypeGenerics() throws Exception {
+                runTest("../../../idea/tests/testData/quickfix/override/nothingToOverride/changeReturnTypeGenerics.kt");
             }
 
             @TestMetadata("changeTypeParameter.kt")
@@ -13015,6 +13025,11 @@ public abstract class HighLevelQuickFixTestGenerated extends AbstractHighLevelQu
         @TestMetadata("explicitTypeInParentProperty.kt")
         public void testExplicitTypeInParentProperty() throws Exception {
             runTest("../../../idea/tests/testData/quickfix/returnInExpressionBody/explicitTypeInParentProperty.kt");
+        }
+
+        @TestMetadata("implicitTypeInLambda.kt")
+        public void testImplicitTypeInLambda() throws Exception {
+            runTest("../../../idea/tests/testData/quickfix/returnInExpressionBody/implicitTypeInLambda.kt");
         }
 
         @TestMetadata("implicitTypeInParent.kt")

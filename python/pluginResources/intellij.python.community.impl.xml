@@ -13,6 +13,7 @@
     <module name="intellij.python.community.impl.poetry.common"/>
     <module name="intellij.python.community.impl.uv.common"/>
     <module name="intellij.python.community.impl.pipenv"/>
+    <module name="intellij.python.community.impl.conda"/>
     <module name="intellij.python.hatch"/>
     <module name="intellij.python.pydev"/>
     <module name="intellij.python.sdk.ui"/>
@@ -70,6 +71,11 @@
               optionId="python.type.inlays.reveal_type"/>
       <option bundle="messages.PyPsiBundle" descriptionKey="INLAY.function.return" enabledByDefault="false" nameKey="INLAY.function.return"
               optionId="python.type.inlays.function.return"/>
+      <option bundle="messages.PyPsiBundle" descriptionKey="INLAY.variance.description" enabledByDefault="true" nameKey="INLAY.variance"
+              optionId="python.type.inlays.variance"/>
+      <option bundle="messages.PyPsiBundle" descriptionKey="INLAY.parameter.type.annotations" enabledByDefault="true"
+              nameKey="INLAY.parameter.type.annotations"
+              optionId="python.type.inlays.parameter.annotation"/>
     </codeInsight.declarativeInlayProvider>
 
     <codeInsight.declarativeInlayProvider group="TYPES_GROUP"
@@ -79,6 +85,14 @@
                                           language="Python"
                                           nameKey="INLAY.positional.args.patterns"
                                           providerId="python.pseudo.keyword.pattern.inlays"/>
+
+    <codeInsight.declarativeInlayProvider group="PARAMETERS_GROUP"
+                                          bundle="messages.PyPsiBundle"
+                                          implementationClass="com.jetbrains.python.inlayHints.PyTestParametrizeInlayHintsProvider"
+                                          isEnabledByDefault="true"
+                                          language="Python"
+                                          nameKey="INLAY.pytest.parametrize.tuple"
+                                          providerId="python.pytest.parametrize.inlays"/>
 
     <codeInsight.inlayActionHandler implementationClass="com.jetbrains.python.inlayHints.PyPseudoKeywordPatternInlayActionHandler"
                                     handlerId="py.pseudo.keyword.pattern"/>
@@ -246,6 +260,10 @@
 
     <testFinder implementation="com.jetbrains.python.codeInsight.testIntegration.PyTestFinder"/>
     <testCreator language="Python" implementationClass="com.jetbrains.python.codeInsight.testIntegration.PyTestCreator"/>
+
+    <applicationService serviceInterface="com.jetbrains.python.psi.types.TypeEvalContextFactory"
+                        serviceImplementation="com.jetbrains.python.psi.types.TypeEvalContextFactoryImpl"/>
+
 
     <localInspection language="Python" shortName="PyUnresolvedReferencesInspection" suppressId="PyUnresolvedReferences"
                      bundle="messages.PyPsiBundle" key="INSP.NAME.unresolved.refs" groupKey="INSP.GROUP.python" enabledByDefault="true"
@@ -529,6 +547,7 @@
     <consoleHistoryModelProvider implementation="com.jetbrains.python.console.PyConsoleHistoryModelProvider"/>
     <scratch.rootType implementation="com.jetbrains.python.console.PyConsoleRootType"/>
     <consoleFilterProvider implementation="com.jetbrains.python.run.PyMessageFilterProvider"/>
+    <consoleFilterProvider implementation="com.jetbrains.python.run.AstralConsoleFilterProvider"/>
 
     <!-- Run Anything -->
     <runAnything.executionProvider order="after RunAnythingRunConfigurationProvider"
@@ -702,10 +721,6 @@
     <registryKey key="python.detect.cross.module.dependencies" defaultValue="false"
                  description="Try to detect and automatically set-up module dependencies in a multi-module project"/>
 
-    <feedback.idleFeedbackSurvey implementation="com.jetbrains.python.statistics.feedback.PythonJobSurvey"/>
-    <statistics.counterUsagesCollector implementationClass="com.jetbrains.python.statistics.feedback.PythonJobStatisticsCollector"/>
-    <backgroundPostStartupActivity implementation="com.jetbrains.python.statistics.feedback.PythonFirstLaunchChecker"/>
-
     <registryKey key="python.prebuilt.skeletons.minor.version.aware" defaultValue="false"
                  description="When disabled stripes minor version to look for prebuilt skeletons"/>
     <registryKey key="python.activate.virtualenv.on.run" defaultValue="true"
@@ -716,8 +731,7 @@
     <!-- uv -->
     <configurationType implementation="com.jetbrains.python.sdk.uv.run.UvRunConfigurationType"/>
 
-    <!-- ux survey -->
-    <feedback.idleFeedbackSurvey implementation="com.jetbrains.python.statistics.feedback.PyCharmUxSurvey"/>
+    <python.processOutput.processOutputIconMapping implementation="com.jetbrains.python.sdk.SdkIconMapping"/>
 
     <!-- Debugger Show value tooltip -->
     <registryKey defaultValue="true" description="Show value tooltip" key="python.debugger.show.value.tooltip"/>
@@ -752,8 +766,6 @@
     <extensionPoint qualifiedName="Pythonid.remoteInterpreterManager"
                     interface="com.jetbrains.python.remote.PythonRemoteInterpreterManager"
                     dynamic="true"/>
-    <extensionPoint qualifiedName="Pythonid.remoteConsoleProcessCreator"
-                    interface="com.jetbrains.python.console.PythonConsoleRemoteProcessCreator" dynamic="true"/>
     <extensionPoint qualifiedName="Pythonid.breakpointHandler"
                     interface="com.jetbrains.python.debugger.PyBreakpointHandlerFactory"
                     dynamic="true"/>
@@ -776,8 +788,6 @@
                     dynamic="true"/>
     <extensionPoint qualifiedName="Pythonid.packageManagerProvider"
                     interface="com.jetbrains.python.packaging.PyPackageManagerProvider"
-                    dynamic="true"/>
-    <extensionPoint qualifiedName="Pythonid.sshInterpreterManager" interface="com.jetbrains.python.remote.PythonSshInterpreterManager"
                     dynamic="true"/>
 
     <extensionPoint qualifiedName="Pythonid.condaSdkCustomizer"
@@ -976,12 +986,14 @@
       id="environmentYml"/>
     <projectSdkConfigurationExtension implementation="com.jetbrains.python.pipenv.sdk.configuration.PyPipfileSdkConfiguration"
                                       id="pipfile" order="before requirementsTxtOrSetupPy"/>
+    <projectSdkConfigurationExtension implementation="com.jetbrains.python.uv.sdk.configuration.PyUvSdkConfiguration"
+                                      id="uv" order="before poetry"/>
     <projectSdkConfigurationExtension implementation="com.jetbrains.python.poetry.sdk.configuration.PyPoetrySdkConfiguration"
-                                      id="poetry"/>"/>
+                                      id="poetry"/>
     <projectSdkConfigurationExtension implementation="com.jetbrains.python.hatch.sdk.configuration.PyHatchSdkConfiguration"
                                       id="hatch" order="after poetry"/>
-    <projectSdkConfigurationExtension implementation="com.jetbrains.python.uv.sdk.configuration.PyUvSdkConfiguration"
-                                      id="uv" order="before venv"/>
+    <projectSdkConfigurationExtension implementation="com.jetbrains.python.uv.sdk.configuration.PyUvBaseSdkConfiguration"
+                                      id="uvBase" order="before venv"/>
     <projectSdkConfigurationExtension implementation="com.jetbrains.python.venv.sdk.configuration.PyVenvSdkConfiguration"
                                       id="venv" order="last"/>
 
@@ -1119,9 +1131,6 @@
               text="Update Python SDK" description="Forcibly update all configured Python SDKs in the project"/>
       <action id="PySetPropertyAction" internal="true" class="com.jetbrains.python.sdk.add.v2.PySetPropertyAction"
               text="Set PropertiesComponent Value" description="Set value in application-level PropertiesComponent"/>
-      <action id="PyShowJobSurvey" internal="true" class="com.jetbrains.python.statistics.feedback.PythonShowJobSurveyAction"
-              text="Show Python Job Survey"/>
-
       <add-to-group group-id="Internal"/>
     </group>
     <group id="Python.NewInterpreter.Extra" popup="false"/>

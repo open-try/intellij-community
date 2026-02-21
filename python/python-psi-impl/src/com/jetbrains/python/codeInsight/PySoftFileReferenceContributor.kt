@@ -27,14 +27,14 @@ import com.jetbrains.python.psi.PyStringLiteralFileReferenceSet
 import com.jetbrains.python.psi.PyTargetExpression
 import com.jetbrains.python.psi.PyTypedElement
 import com.jetbrains.python.psi.impl.PyBuiltinCache
-import com.jetbrains.python.psi.impl.mapArguments
+import com.jetbrains.python.psi.impl.PyCallExpressionHelper
 import com.jetbrains.python.psi.resolve.PyResolveContext
 import com.jetbrains.python.psi.resolve.PyResolveUtil
 import com.jetbrains.python.psi.resolve.fromFoothold
 import com.jetbrains.python.psi.resolve.resolveTopLevelMember
 import com.jetbrains.python.psi.types.PyType
 import com.jetbrains.python.psi.types.PyTypeChecker
-import com.jetbrains.python.psi.types.PyTypeUtil
+import com.jetbrains.python.psi.types.PyTypeUtil.toStream
 import com.jetbrains.python.psi.types.PyUnionType
 import com.jetbrains.python.psi.types.TypeEvalContext
 import java.util.Locale
@@ -90,7 +90,7 @@ open class PySoftFileReferenceContributor : PsiReferenceContributor() {
           parameterNames.any(::matchesPathNamePattern)
         }
         .any {
-          val mapping = callExpr.mapArguments(it, typeEvalContext)
+          val mapping = PyCallExpressionHelper.mapArguments(callExpr, it, typeEvalContext)
           val parameterName = mapping.mappedParameters[expr]?.name ?: return@any false
           matchesPathNamePattern(parameterName)
         }
@@ -122,14 +122,14 @@ open class PySoftFileReferenceContributor : PsiReferenceContributor() {
       val argumentTypes = callExpr.multiResolveCallee(PyResolveContext.defaultContext(typeEvalContext))
         .asSequence()
         .mapNotNull {
-          val mapping = callExpr.mapArguments(it, typeEvalContext)
+          val mapping = PyCallExpressionHelper.mapArguments(callExpr, it, typeEvalContext)
           mapping.mappedParameters[expr]?.getArgumentType(typeEvalContext)
         }
 
       // We can't use PyTypeChecker.match directly because the type `str | PathLike` is considered incompatible 
       // with neither str nor PathLike (strict union semantics).
       fun PyType.allowsValuesCompatibleWith(superType: PyType): Boolean =
-        PyTypeUtil.toStream(this).anyMatch { it != null && PyTypeChecker.match(superType, it, typeEvalContext) }
+        this.toStream().anyMatch { it != null && PyTypeChecker.match(superType, it, typeEvalContext) }
 
       return argumentTypes.any { it.allowsValuesCompatibleWith(bytesOrUnicodeType) } &&
              argumentTypes.any { it.allowsValuesCompatibleWith(osPathLikeType) }

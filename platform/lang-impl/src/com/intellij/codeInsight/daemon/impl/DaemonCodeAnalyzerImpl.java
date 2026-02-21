@@ -145,9 +145,9 @@ public final class DaemonCodeAnalyzerImpl extends DaemonCodeAnalyzerEx
   private FileEditorManager fileEditorManager;
   private final Map<FileEditor, DaemonProgressIndicator> myUpdateProgress = new HashMap<>(); // guarded by `this` lock
 
-  private final UpdateRunnable myUpdateRunnable;
+  private final UpdateRunnable myUpdateRunnable = new UpdateRunnable(this);
   private volatile @NotNull Future<?> myUpdateRunnableFuture = CompletableFuture.completedFuture(null);
-  private boolean myUpdateByTimerEnabled = true; // guarded by this
+  private volatile boolean myUpdateByTimerEnabled = true; // guarded by this
   private final Collection<VirtualFile> myDisabledHintsFiles = new HashSet<>();
   private final Collection<VirtualFile> myDisabledHighlightingFiles = new HashSet<>();
 
@@ -187,7 +187,6 @@ public final class DaemonCodeAnalyzerImpl extends DaemonCodeAnalyzerEx
 
     myDisposed = false;
     myFileStatusMap.markAllFilesDirty("DaemonCodeAnalyzer init");
-    myUpdateRunnable = new UpdateRunnable(this);
     Disposer.register(this, () -> {
       assert !myDisposed : "Double dispose";
       myUpdateRunnable.clearFieldsOnDispose();
@@ -221,7 +220,7 @@ public final class DaemonCodeAnalyzerImpl extends DaemonCodeAnalyzerEx
   }
 
   @Override
-  public synchronized void dispose() {
+  public void dispose() {
     clearReferences();
   }
 
@@ -523,32 +522,6 @@ public final class DaemonCodeAnalyzerImpl extends DaemonCodeAnalyzerEx
     return result;
   }
 
-  private volatile boolean mustWaitForSmartMode = true;
-  @TestOnly
-  public void mustWaitForSmartMode(boolean mustWait, @NotNull Disposable parent) {
-    assert ApplicationManager.getApplication().isUnitTestMode();
-    boolean old = mustWaitForSmartMode;
-    mustWaitForSmartMode = mustWait;
-    Disposer.register(parent, () -> mustWaitForSmartMode = old);
-  }
-
-  /**
-   * do not run in production since it differs slightly from the {@link #runUpdate()}
-   */
-  @TestOnly
-  @ApiStatus.Internal
-  public void runPasses(@NotNull PsiFile psiFile,
-                        @NotNull Document document,
-                        @NotNull TextEditor textEditor,
-                        int @NotNull [] passesToIgnore,
-                        boolean canChangeDocument,
-                        @Nullable Runnable callbackWhileWaiting) throws Exception {
-    ThreadingAssertions.assertEventDispatchThread();
-    assert !myDisposed;
-    new TestDaemonCodeAnalyzerImpl(myProject).runPasses(psiFile, document, textEditor, passesToIgnore, canChangeDocument,
-                                                        mustWaitForSmartMode, callbackWhileWaiting);
-  }
-
   @Override
   public void settingsChanged() {
     //noinspection SpellCheckingInspection
@@ -576,7 +549,8 @@ public final class DaemonCodeAnalyzerImpl extends DaemonCodeAnalyzerEx
     });
   }
 
-  synchronized boolean isUpdateByTimerEnabled() {
+  @ApiStatus.Internal
+  public boolean isUpdateByTimerEnabled() {
     return myUpdateByTimerEnabled;
   }
 
@@ -640,7 +614,9 @@ public final class DaemonCodeAnalyzerImpl extends DaemonCodeAnalyzerEx
 
   @Override
   public boolean isAutohintsAvailable(@NotNull PsiFile psiFile) {
-    return isHighlightingAvailable(psiFile) && !(psiFile instanceof PsiCompiledElement);
+    return isHighlightingAvailable(psiFile)
+           && !(psiFile instanceof PsiCompiledElement)
+           && !AutoHintsSuppressor.Companion.areAutoHintsSuppressedFor(psiFile);
   }
 
   @NotNull
@@ -713,10 +689,9 @@ public final class DaemonCodeAnalyzerImpl extends DaemonCodeAnalyzerEx
     List<Document> documents = ContainerUtil.mapNotNull(getSelectedEditors(), fe -> {
       Editor editor = fe instanceof TextEditor te ? te.getEditor() : null;
       VirtualFile virtualFile = getVirtualFile(fe);
-      Document document = editor == null
-                          ? virtualFile == null ? null : FileDocumentManager.getInstance().getCachedDocument(virtualFile)
-                          : editor.getDocument();
-      return document;
+      return editor == null
+             ? virtualFile == null ? null : FileDocumentManager.getInstance().getCachedDocument(virtualFile)
+             : editor.getDocument();
     });
     return
       !PsiDocumentManager.getInstance(myProject).hasUncommitedDocuments() &&
@@ -863,7 +838,7 @@ public final class DaemonCodeAnalyzerImpl extends DaemonCodeAnalyzerEx
                                       @Nullable Throwable cause,
                                       @NonNls @NotNull String reason) {
     if (!indicator.isCanceled()) {
-      PassExecutorService.log(indicator, null, "Cancel (reason:'", reason, "')", toRestartAlarm);
+      PassExecutorService.log(indicator, null, "Cancel (reason: '", reason, "')", toRestartAlarm);
       if (cause == null) {
         indicator.cancel(reason);
       }
@@ -1019,7 +994,7 @@ public final class DaemonCodeAnalyzerImpl extends DaemonCodeAnalyzerEx
       }
 
       if (!foundInfoList.isEmpty() && highestPriorityOnly) {
-        HighlightInfo foundInfo = foundInfoList.get(0);
+        HighlightInfo foundInfo = foundInfoList.getFirst();
         int compare = foundInfo.getSeverity().compareTo(info.getSeverity());
         if (compare < 0) {
           foundInfoList.clear();
@@ -1041,7 +1016,7 @@ public final class DaemonCodeAnalyzerImpl extends DaemonCodeAnalyzerEx
         return null;
       }
       if (foundInfoList.size() == 1) {
-        return foundInfoList.get(0);
+        return foundInfoList.getFirst();
       }
       foundInfoList.sort(Comparator.comparing(HighlightInfo::getSeverity).reversed());
       return HighlightInfo.createComposite(foundInfoList, myProject);
@@ -1193,12 +1168,10 @@ public final class DaemonCodeAnalyzerImpl extends DaemonCodeAnalyzerEx
     if (documentManager.hasEventSystemEnabledUncommittedDocuments()) {
       // restart when everything committed
       documentManager.performLaterWhenAllCommitted(() -> {
-        synchronized (this) {
-          if (LOG.isDebugEnabled()) {
-            LOG.debug("Rescheduled after commit");
-          }
-          scheduleIfNotRunning();
+        if (LOG.isDebugEnabled()) {
+          LOG.debug("Rescheduled after commit");
         }
+        scheduleIfNotRunning();
       });
       return "wasn't run because uncommitted docs found: "+Arrays.toString(documentManager.getUncommittedDocuments())+"; delayed until commit";
     }

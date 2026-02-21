@@ -1,4 +1,4 @@
-// Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
+// Copyright 2000-2026 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.codeInsight.daemon.impl;
 
 import com.intellij.codeInsight.multiverse.CodeInsightContext;
@@ -11,6 +11,7 @@ import com.intellij.injected.editor.DocumentWindow;
 import com.intellij.lang.ASTNode;
 import com.intellij.lang.Language;
 import com.intellij.lang.annotation.Annotator;
+import com.intellij.lang.annotation.ExternalAnnotator;
 import com.intellij.lang.annotation.HighlightSeverity;
 import com.intellij.lang.injection.InjectedLanguageManager;
 import com.intellij.openapi.Disposable;
@@ -303,7 +304,7 @@ public final class HighlightInfoUpdaterImpl extends HighlightInfoUpdater impleme
                              !liveInjectedFiles.contains(viewProvider) &&
                              restrictRange.contains(textRange);
       if (shouldRemove) {
-        removeAllHighlighterInsideFile(viewProvider, this, highlightingSession, toolMap);
+        removeAllHighlighterInsideFile(viewProvider, highlightingSession, toolMap);
         return true;
       }
       return false;
@@ -311,18 +312,28 @@ public final class HighlightInfoUpdaterImpl extends HighlightInfoUpdater impleme
   }
 
   // dispose all range highlighters from recycler while removing corresponding (invalid) PSI elements from the data
-  synchronized void incinerateAndRemoveFromDataAtomically(@NotNull ManagedHighlighterRecycler recycler) {
+  synchronized void incinerateAndRemoveFromDataAtomically(@NotNull ManagedHighlighterRecycler recycler, @NotNull String debugInfo) {
     // remove highlighters which were reused or incinerated from the HighlightInfoUpdater's maps
     Collection<InvalidPsi> psiElements = recycler.forAllInGarbageBin();
     HighlightingSession session = recycler.myHighlightingSession;
     if (!psiElements.isEmpty()) {
       if (LOG.isTraceEnabled()) {
-        LOG.trace("incinerateAndRemoveFromDataAtomically: psiElements (" + psiElements.size() + "): " + psiElements + " " + session.getProgressIndicator());
+        LOG.trace("incinerateAndRemoveFromDataAtomically: " + debugInfo+ " psiElements (" + psiElements.size() + "): " + psiElements + " " + session.getProgressIndicator());
       }
     }
     Map<Object, ToolHighlights> data = getData(session.getPsiFile(), session.getDocument());
-    removeFromDataAtomically(data, psiElements, session);
-    recycler.incinerateAndClear();
+    Boolean removed = null;
+    try {
+      removed = removeFromDataAtomically(data, psiElements, session);
+    }
+    finally {
+      recycler.incinerateAndClear();
+      if (!psiElements.isEmpty()) {
+        if (LOG.isTraceEnabled()) {
+          LOG.trace("incinerateAndRemoveFromDataAtomically: " + debugInfo+ " finished: removed=" + removed + " " + session.getProgressIndicator());
+        }
+      }
+    }
   }
 
   @SuppressWarnings("UsagesOfObsoleteApi")
@@ -409,12 +420,11 @@ public final class HighlightInfoUpdaterImpl extends HighlightInfoUpdater impleme
   }
 
   private synchronized void recycleInvalidPsiElements(@NotNull PsiFile psiFile,
-                                                      @NotNull Object requestor,
                                                       @NotNull HighlightingSession session,
                                                       @NotNull ManagedHighlighterRecycler invalidPsiRecycler,
                                                       @NotNull WhatTool toolIdPredicate) {
     disposeEvictedInfos(session, toolIdPredicate);
-    collectPsiElements(psiFile, requestor, session, toolIdPredicate,
+    collectPsiElements(psiFile, session, toolIdPredicate,
         psiElement -> psiElement != FAKE_ELEMENT && !psiElement.isValid(), // find invalid PSI
          (info, psiElement) -> {
           // heuristic: when the incremental reparse support is poor, and a lot of PSI is invalidated unnecessarily on each typing,
@@ -424,7 +434,6 @@ public final class HighlightInfoUpdaterImpl extends HighlightInfoUpdater impleme
             LOG.trace("recycleInvalidPsiElements (predicate=" + toolIdPredicate + ") " + info.getHighlighter() +
                       "; toolIdPredicate=" + toolIdPredicate +
                       " for invalid " + debugPsiInfo(psiElement) +
-                      " from " + requestor +
                       " " + session.getProgressIndicator());
           }
            if (info.getHighlighter() != null) {
@@ -485,7 +494,9 @@ public final class HighlightInfoUpdaterImpl extends HighlightInfoUpdater impleme
       if (isAnnotatorToolId(toolId) || isHighlightVisitorToolId(toolId)) {
         return this == ANNOTATOR_OR_VISITOR;
       }
-      if (toolId == InjectedLanguageManagerImpl.INJECTION_BACKGROUND_TOOL_ID || toolId == InjectedLanguageManagerImpl.INJECTION_SYNTAX_TOOL_ID) {
+      if (toolId == InjectedLanguageManagerImpl.INJECTION_BACKGROUND_TOOL_ID
+          || toolId == InjectedLanguageManagerImpl.INJECTION_SYNTAX_TOOL_ID
+          || toolId instanceof Class<?> c && ExternalAnnotator.class.isAssignableFrom(c)) {
         return false;
       }
       assert false : "unknown tool id type: "+toolId +"("+toolId.getClass()+")";
@@ -493,7 +504,6 @@ public final class HighlightInfoUpdaterImpl extends HighlightInfoUpdater impleme
     }
   }
   private synchronized void collectPsiElements(@NotNull PsiFile psiFile,
-                                               @NotNull Object requestor,
                                                @NotNull HighlightingSession session,
                                                @NotNull WhatTool toolPredicate,
                                                @NotNull Predicate<? super PsiElement> psiElementPredicate,
@@ -518,7 +528,7 @@ public final class HighlightInfoUpdaterImpl extends HighlightInfoUpdater impleme
       if (psi == psiFile) {
         return false;
       }
-      removeAllHighlighterInsideFile(viewProvider, requestor, session, toolMap);
+      removeAllHighlighterInsideFile(viewProvider, session, toolMap);
       return true;
     });
 
@@ -549,7 +559,6 @@ public final class HighlightInfoUpdaterImpl extends HighlightInfoUpdater impleme
   }
 
   private static void removeAllHighlighterInsideFile(@NotNull FileViewProvider psiFile,
-                                                     @NotNull Object requestor,
                                                      @NotNull HighlightingSession session,
                                                      @NotNull @Unmodifiable Map<Object, ToolHighlights> toolMap) {
     int removed = 0;
@@ -562,7 +571,7 @@ public final class HighlightInfoUpdaterImpl extends HighlightInfoUpdater impleme
       }
     }
     if (LOG.isTraceEnabled()) {
-      LOG.trace("removeAllHighlighterInsideFile: removed invalid file: " + psiFile + " (" + removed + " highlighters removed); from " + requestor+" " +session.getProgressIndicator());
+      LOG.trace("removeAllHighlighterInsideFile: removed invalid file: " + psiFile + " (" + removed + " highlighters removed) " + session.getProgressIndicator());
     }
   }
 
@@ -629,7 +638,7 @@ public final class HighlightInfoUpdaterImpl extends HighlightInfoUpdater impleme
       ProgressManager.getInstance().executeNonCancelableSection(() -> {
         //assertNoDuplicates(psiFile, getInfosFromMarkup(hostDocument, project), "markup before psiElementVisited ");
 
-        ManagedHighlighterRecycler.runWithRecycler(session, recycler -> {
+        ManagedHighlighterRecycler.runWithRecycler(session, "psiElementVisited", recycler -> {
           for (HighlightInfo oldInfo : oldInfos) {
             RangeHighlighterEx highlighter = oldInfo.getHighlighter();
             if (highlighter != null) {
@@ -746,14 +755,14 @@ public final class HighlightInfoUpdaterImpl extends HighlightInfoUpdater impleme
     Set<HighlightInfo> fromData = new HashSet<>(getAllData(psiFile, toolIdPredicate));
 
     if (!new HashSet<>(fromMarkup).equals(fromData)) {
-      Comparator<Object> toString = Comparator.comparing(o->o.toString());
       List<HighlightInfo> ds = ContainerUtil.sorted(fromData, BY_OFFSETS_AND_HASH_ERRORS_FIRST);
       List<HighlightInfo> ms = ContainerUtil.sorted(fromMarkup, BY_OFFSETS_AND_HASH_ERRORS_FIRST);
       String fromDataStr = StringUtil.join(ds, "\n");
       String fromMarkupStr = StringUtil.join(ms, "\n");
-      LOG.error("data inconsistent with markup: data:\n"
-                + fromDataStr + "\n---------------markup:\n"
-                + fromMarkupStr+"\n========="
+      LOG.error("data inconsistent with markup. " +
+                "data(" +fromData.size()+"):\n" + fromDataStr + "\n" +
+                "---------------markup(" +fromMarkup.size()+"):\n" + fromMarkupStr+
+                "\n========="
       );
     }
   }
@@ -850,7 +859,7 @@ public final class HighlightInfoUpdaterImpl extends HighlightInfoUpdater impleme
   public synchronized void removeWarningsInsideErrors(@NotNull List<? extends PsiFile> injectedFragments,
                                                       @NotNull Document hostDocument,
                                                       @NotNull HighlightingSession session) {
-    ManagedHighlighterRecycler.runWithRecycler(session, recycler -> {
+    ManagedHighlighterRecycler.runWithRecycler(session, "removeWarningsInsideErrors", recycler -> {
       for (PsiFile psiFile: ContainerUtil.append(injectedFragments, session.getPsiFile())) {
         Map<Object, ToolHighlights> map = getData(psiFile, hostDocument);
         if (map.isEmpty()) {
@@ -1008,8 +1017,8 @@ public final class HighlightInfoUpdaterImpl extends HighlightInfoUpdater impleme
   public void runWithInvalidPsiRecycler(@NotNull HighlightingSession session,
                                         @NotNull WhatTool toolIdPredicate,
                                         @NotNull Consumer<? super ManagedHighlighterRecycler> invalidPsiRecyclerConsumer) {
-    ManagedHighlighterRecycler.runWithRecycler(session, invalidPsiRecycler -> {
-      recycleInvalidPsiElements(session.getPsiFile(), this, session, invalidPsiRecycler, toolIdPredicate);
+    ManagedHighlighterRecycler.runWithRecycler(session, "runWithInvalidPsiRecycler", invalidPsiRecycler -> {
+      recycleInvalidPsiElements(session.getPsiFile(), session, invalidPsiRecycler, toolIdPredicate);
       ScheduledFuture<?> future;
       if (invalidPsiRecycler.forAllInGarbageBin().isEmpty()) {
         future = null;
@@ -1027,7 +1036,7 @@ public final class HighlightInfoUpdaterImpl extends HighlightInfoUpdater impleme
                 }
               }
               else {
-                incinerateAndRemoveFromDataAtomically(invalidPsiRecycler);
+                incinerateAndRemoveFromDataAtomically(invalidPsiRecycler, "(invalidPsiRecycler session timed-out)");
               }
             });
           }, session.getProgressIndicator())
@@ -1516,11 +1525,13 @@ public final class HighlightInfoUpdaterImpl extends HighlightInfoUpdater impleme
     if (toReuse != null && toReuse.isValid()) {
       highlighter = toReuse;
       BackgroundUpdateHighlightersUtil.associateInfoAndHighlighter(info, highlighter);
+      CodeInsightContextHighlightingUtil.installCodeInsightContext(highlighter, project, context);
     }
     else {
       highlighter = markupModel.addRangeHighlighterAndChangeAttributes(null, 0, document.getTextLength(), FILE_LEVEL_FAKE_LAYER,
                                                                        HighlighterTargetArea.EXACT_RANGE, false, ex -> {
           BackgroundUpdateHighlightersUtil.associateInfoAndHighlighter(info, ex);
+          CodeInsightContextHighlightingUtil.installCodeInsightContext(ex, project, context);
         });
     }
     highlighter.setGreedyToLeft(true);
@@ -1529,9 +1540,6 @@ public final class HighlightInfoUpdaterImpl extends HighlightInfoUpdater impleme
     // create a fake whole-file highlighter which will track the document size changes
     // and which will make possible to calculate correct `info.getActualEndOffset()`
     info.setGroup(group);
-    if (context != null) {
-      CodeInsightContextHighlightingUtil.installCodeInsightContext(highlighter, project, context);
-    }
     return highlighter;
   }
 }

@@ -17,7 +17,7 @@ import org.jetbrains.kotlin.psi.KtStringTemplateExpression
 import org.jetbrains.kotlin.psi.KtValueArgumentList
 import org.jetbrains.kotlin.psi.KtVisitorVoid
 import org.jetbrains.plugins.gradle.codeInspection.GradleInspectionBundle
-import org.jetbrains.plugins.gradle.codeInspection.fix.GradleDependencyNamedArgumentsFix.Companion.buildSingleStringDependencyNotation
+import org.jetbrains.plugins.gradle.util.GradleDependencyUtil.buildSingleStringDependencyNotation
 
 class KotlinAvoidDependencyNamedArgumentsNotationInspectionVisitor(private val holder: ProblemsHolder) : KtVisitorVoid() {
     override fun visitCallExpression(expression: KtCallExpression) {

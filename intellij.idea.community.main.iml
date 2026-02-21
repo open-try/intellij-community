@@ -266,6 +266,22 @@
     <orderEntry type="module" module-name="intellij.vcs.git.terminal" scope="TEST" />
     <orderEntry type="module" module-name="intellij.python.community.plugin" scope="RUNTIME" />
     <orderEntry type="module" module-name="intellij.platform.instanceContainer.tests" scope="TEST" />
+    <orderEntry type="module" module-name="intellij.agent.workbench.chat" scope="TEST" />
+    <orderEntry type="module" module-name="intellij.agent.workbench.plugin" scope="TEST" />
+    <orderEntry type="module" module-name="intellij.agent.workbench.sessions" scope="TEST" />
     <orderEntry type="module" module-name="intellij.platform.polySymbols.tests" scope="TEST" />
+    <orderEntry type="module" module-name="intellij.platform.images.tests" scope="TEST" />
+    <orderEntry type="module" module-name="intellij.regexp.tests" scope="TEST" />
+    <orderEntry type="module" module-name="intellij.platform.debugger.impl.tests" scope="TEST" />
+    <orderEntry type="module" module-name="intellij.python.venv.tests" scope="TEST" />
+    <orderEntry type="module" module-name="intellij.python.community.services.systemPython.tests" scope="TEST" />
+    <orderEntry type="module" module-name="intellij.python.pyproject.tests" scope="TEST" />
+    <orderEntry type="module" module-name="intellij.python.community.services.internal.impl.tests" scope="TEST" />
+    <orderEntry type="module" module-name="intellij.python.test.env.common" scope="TEST" />
+    <orderEntry type="module" module-name="intellij.python.test.env.conda" scope="TEST" />
+    <orderEntry type="module" module-name="intellij.python.test.env.core" scope="TEST" />
+    <orderEntry type="module" module-name="intellij.python.test.env.junit4" scope="TEST" />
+    <orderEntry type="module" module-name="intellij.python.test.env.plain" scope="TEST" />
+    <orderEntry type="module" module-name="intellij.python.test.env.uv" scope="TEST" />
   </component>
 </module>

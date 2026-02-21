@@ -67,8 +67,8 @@ import org.jetbrains.intellij.build.telemetry.TraceManager.spanBuilder
 import org.jetbrains.intellij.build.telemetry.block
 import org.jetbrains.intellij.build.telemetry.use
 import org.jetbrains.intellij.build.zipSourcesOfModules
-import java.nio.file.FileVisitResult
 import java.nio.file.FileSystems
+import java.nio.file.FileVisitResult
 import java.nio.file.Files
 import java.nio.file.NoSuchFileException
 import java.nio.file.Path
@@ -488,11 +488,17 @@ suspend fun buildDistributions(context: BuildContext): Unit = block("build distr
       val pluginsToPublish = getPluginLayoutsByJpsModuleNames(
         modules = context.productProperties.productLayout.pluginModulesToPublish,
         productLayout = context.productProperties.productLayout,
-        toPublish = true
+        toPublish = true,
       )
       buildNonBundledPlugins(
-        pluginsToPublish, context.options.compressZipFiles, buildPlatformLibJob = null, distributionState, buildSearchableOptions(context), isUpdateFromSources = false,
-        distributionState.platformLayout.descriptorCacheContainer, context
+        pluginsToPublish = pluginsToPublish,
+        compressPluginArchive = context.options.compressZipFiles,
+        buildPlatformLibJob = null,
+        state = distributionState,
+        searchableOptionSet = buildSearchableOptions(context),
+        isUpdateFromSources = false,
+        descriptorCacheContainer = distributionState.platformLayout.descriptorCacheContainer,
+        context = context,
       )
       return@coroutineScope
     }
@@ -590,6 +596,11 @@ private suspend fun checkProductProperties(context: BuildContext) {
   checkProductLayout(context)
 
   val properties = context.productProperties
+  val imagesDirectoryPath = properties.imagesDirectoryPath
+  if (imagesDirectoryPath != null) {
+    checkPaths(listOf(imagesDirectoryPath), "productProperties.imagesDirectoryPath")
+    verifyThatProductImageFilesExist(imagesDirectoryPath, context)
+  }
   checkPaths(properties.brandingResourcePaths, "productProperties.brandingResourcePaths")
   checkPaths(properties.additionalIDEPropertiesFilePaths, "productProperties.additionalIDEPropertiesFilePaths")
   checkPaths(properties.additionalDirectoriesWithLicenses, "productProperties.additionalDirectoriesWithLicenses")
@@ -634,15 +645,17 @@ private suspend fun checkProductProperties(context: BuildContext) {
     checkNotNull(macCustomizer.bundleIdentifier) {
       "Mandatory property '${"productProperties.macCustomizer.bundleIdentifier"}' is not specified"
     }
-    checkPaths(listOf(macCustomizer.icnsPath), "productProperties.macCustomizer.icnsPath")
+    checkPaths(listOfNotNull(macCustomizer.icnsPath), "productProperties.macCustomizer.icnsPath")
     checkPaths(listOfNotNull(macCustomizer.icnsPathForEAP), "productProperties.macCustomizer.icnsPathForEAP")
+    @Suppress("DEPRECATION")
     checkPaths(listOfNotNull(macCustomizer.icnsPathForAlternativeIcon), "productProperties.macCustomizer.icnsPathForAlternativeIcon")
+    @Suppress("DEPRECATION")
     checkPaths(
       listOfNotNull(macCustomizer.icnsPathForAlternativeIconForEAP),
       "productProperties.macCustomizer.icnsPathForAlternativeIconForEAP"
     )
     context.executeStep(spanBuilder("check .dmg images"), BuildOptions.MAC_DMG_STEP) {
-      checkPaths(listOf(macCustomizer.dmgImagePath), "productProperties.macCustomizer.dmgImagePath")
+      checkPaths(listOfNotNull(macCustomizer.dmgImagePath), "productProperties.macCustomizer.dmgImagePath")
       checkPaths(listOfNotNull(macCustomizer.dmgImagePathForEAP), "productProperties.macCustomizer.dmgImagePathForEAP")
     }
   }
@@ -785,7 +798,7 @@ private fun checkPluginModules(pluginModules: Collection<String>?, fieldName: St
     context.outputProvider.findModule(name)?.let { findFileInModuleSources(it, "META-INF/plugin.xml") } == null
   }
   check(unknownBundledPluginModules.isEmpty()) {
-    "The following modules from $fieldName don't contain META-INF/plugin.xml file and aren't specified as optional plugin modules" +
+    "The following modules from $fieldName don't contain META-INF/plugin.xml file and aren't specified as optional plugin modules " +
     "in productProperties.productLayout.pluginLayouts: ${unknownBundledPluginModules.joinToString()}."
   }
 }
@@ -911,13 +924,12 @@ private suspend fun buildCrossPlatformOnlyPlugins(context: BuildContext): Pair<P
     .use {
       val state = context.distributionState()
       buildPlugins(
-        moduleOutputPatcher = ModuleOutputPatcher(),
         plugins = crossPlatformPlugins,
         os = null,
         arch = null,
         targetDir = targetDir,
         state = state,
-        buildPlatformJob = null,
+        platformEntriesProvider = null,
         searchableOptionSet = null,
         descriptorCacheContainer = state.platformLayout.descriptorCacheContainer,
         context = context,

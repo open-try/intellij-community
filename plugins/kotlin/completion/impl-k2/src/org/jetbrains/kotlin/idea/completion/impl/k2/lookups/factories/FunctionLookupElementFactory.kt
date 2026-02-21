@@ -40,10 +40,11 @@ import org.jetbrains.kotlin.idea.base.analysis.api.utils.isPossiblySubTypeOf
 import org.jetbrains.kotlin.idea.base.analysis.api.utils.shortenReferencesInRange
 import org.jetbrains.kotlin.idea.base.analysis.withRootPrefixIfNeeded
 import org.jetbrains.kotlin.idea.base.serialization.names.KotlinNameSerializer
-import org.jetbrains.kotlin.idea.completion.impl.k2.contributors.helpers.insertString
-import org.jetbrains.kotlin.idea.completion.impl.k2.contributors.helpers.insertStringAndInvokeCompletion
 import org.jetbrains.kotlin.idea.completion.acceptOpeningBrace
 import org.jetbrains.kotlin.idea.completion.handlers.isCharAt
+import org.jetbrains.kotlin.idea.completion.impl.k2.contributors.toMatchingVariadicCallableOrNull
+import org.jetbrains.kotlin.idea.completion.impl.k2.contributors.helpers.insertString
+import org.jetbrains.kotlin.idea.completion.impl.k2.contributors.helpers.insertStringAndInvokeCompletion
 import org.jetbrains.kotlin.idea.completion.impl.k2.handlers.TrailingLambdaInsertionHandler
 import org.jetbrains.kotlin.idea.completion.impl.k2.lookups.CallableInsertionOptions
 import org.jetbrains.kotlin.idea.completion.impl.k2.lookups.CallableInsertionStrategy
@@ -53,12 +54,12 @@ import org.jetbrains.kotlin.idea.completion.impl.k2.lookups.KotlinCallableLookup
 import org.jetbrains.kotlin.idea.completion.impl.k2.lookups.QuotedNamesAwareInsertionHandler
 import org.jetbrains.kotlin.idea.completion.impl.k2.lookups.TailTextProvider
 import org.jetbrains.kotlin.idea.completion.impl.k2.lookups.addImportIfRequired
-import org.jetbrains.kotlin.idea.completion.impl.k2.weighers.TrailingLambdaWeigher.hasTrailingLambda
 import org.jetbrains.kotlin.idea.completion.impl.k2.lookups.factories.FunctionCallLookupObject.Companion.hasReceiver
 import org.jetbrains.kotlin.idea.completion.impl.k2.lookups.indexOfSkippingSpace
 import org.jetbrains.kotlin.idea.completion.impl.k2.lookups.skipSpaces
 import org.jetbrains.kotlin.idea.completion.impl.k2.lookups.updateLookupElementBuilderToInsertTypeQualifierOnSuper
 import org.jetbrains.kotlin.idea.completion.impl.k2.lookups.withCallableSignatureInfo
+import org.jetbrains.kotlin.idea.completion.impl.k2.weighers.TrailingLambdaWeigher.hasTrailingLambda
 import org.jetbrains.kotlin.lexer.KtTokens
 import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.psi.KtFile
@@ -77,11 +78,16 @@ internal object FunctionLookupElementFactory {
     ): LookupElementBuilder {
         val valueParameters = signature.valueParameters
 
+        // Check if the signature represents a variadic callable
+        val variadicCallable = signature.toMatchingVariadicCallableOrNull()
+        val renderedParameters =
+            variadicCallable?.renderedParameters ?: CompletionShortNamesRenderer.renderFunctionParameters(valueParameters)
+
         val symbol = signature.symbol
         val lookupObject = FunctionCallLookupObject(
             shortName = aliasName ?: shortName,
             options = options,
-            renderedDeclaration = CompletionShortNamesRenderer.renderFunctionParameters(valueParameters),
+            renderedDeclaration = renderedParameters,
             hasReceiver = signature.hasReceiver,
             inputValueArgumentsAreRequired = valueParameters.isNotEmpty(),
             inputTypeArgumentsAreRequired = !FunctionInsertionHelper.functionCanBeCalledWithoutExplicitTypeArguments(symbol, expectedType),
@@ -125,8 +131,8 @@ internal object FunctionLookupElementFactory {
                     ?: return null
 
                 val mappings = samConstructor.typeParameters
-                        .zip(type.typeArguments.mapNotNull { it.type })
-                        .toMap()
+                    .zip(type.typeArguments.mapNotNull { it.type })
+                    .toMap()
 
                 val functionType = (@OptIn(KaExperimentalApi::class) createSubstitutor(mappings)
                     .substitute(samConstructorType)) as? KaFunctionType
@@ -233,7 +239,7 @@ internal object AsIdentifierCustomInsertionHandler : CallableIdentifierInsertion
 @Serializable
 internal data class WithCallArgsInsertionHandler(
     val argString: String,
-): QuotedNamesAwareInsertionHandler() {
+) : QuotedNamesAwareInsertionHandler() {
     override fun handleInsert(context: InsertionContext, item: LookupElement) {
         super.handleInsert(context, item)
         context.insertString(argString)
@@ -422,16 +428,11 @@ internal object FunctionInsertionHandler : QuotedNamesAwareInsertionHandler() {
                     caretModel.moveToOffset(openingBracketOffset + additionalOffset)
                 }
 
-                context.laterRunnable = if (insertLambda) Runnable {
-                    // We schedule auto-popup after moving the caret into the lambda.
-                    // It needs to be auto-popup rather than invoking completion manually,
-                    // otherwise pressing space will cause completion to insert the item, which is
-                    // not always wanted, see: KTIJ-36825
-                    AutoPopupController.getInstance(project)
-                        .scheduleAutoPopup(editor)
-                } else Runnable {
-                    AutoPopupController.getInstance(project)
-                        .autoPopupParameterInfo(editor, offsetElement)
+                if (!insertLambda) {
+                    context.laterRunnable = Runnable {
+                        AutoPopupController.getInstance(project)
+                            .autoPopupParameterInfo(editor, offsetElement)
+                    }
                 }
             } else {
                 caretModel.moveToOffset(closeBracketOffset + 1)

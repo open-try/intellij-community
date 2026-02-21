@@ -324,19 +324,23 @@ public abstract class VirtualFile extends UserDataHolderBase implements Modifica
   public abstract VirtualFile getParent();
 
   /**
-   * Gets the child files. The returned files are guaranteed to be valid, if the method is called in a read action.
+   * Gets the child files.
+   * The returned files are guaranteed to be valid if the method is called in a read action.
    *
-   * @return array of the child files or {@code null} if this file is not a directory
+   * @return array of the child files.
+   *         If the file is not {@link #isDirectory()}, the method could return either {@code null}, or an empty array.
+   *         New implementations should prefer an empty array, but {@code null} is still legit for backward compatibility.
    * @throws InvalidVirtualFileAccessException if this method is called inside read action on an invalid file
    */
-  public abstract VirtualFile[] getChildren();
+  public abstract VirtualFile /*@Nullable*/ [] getChildren();
 
   /**
-   * {@link #getChildren()} is not formally requires the sorting, but many methods rely on stable sorting provided by it
-   * But sorting is not cheap, hence this method exists for scenarios there order of children doesn't matter.
+   * While {@link #getChildren()} is not formally required to return a sorted result, still many use-cases _rely_ on stable sorting
+   * provided by it. But the sorting is not cheap; hence this method exists for scenarios there order of children doesn't matter,
+   * for implementations that may skip it.
    */
   @ApiStatus.Internal
-  public VirtualFile @NotNull [] getChildren(boolean requireSorting){
+  public VirtualFile @Nullable [] getChildren(boolean requireSorting){
     return getChildren();
   }
 

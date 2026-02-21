@@ -143,9 +143,17 @@ class NotebookEditorUiComponent(private val data: ComponentData) : JEditorUiComp
     driver.invokeActionWithRetries("NotebookInsertCodeCellAction")
   }
 
+  fun addEmptyMarkdownCell(): Unit {
+    driver.invokeActionWithRetries("NotebookInsertMarkdownCellAction")
+  }
+
+  fun pasteToCurrentCell(text: String) {
+    driver.ui.pasteText(text)
+  }
+
   fun addCodeCell(text: String) {
     addEmptyCodeCell()
-    driver.ui.pasteText(text)
+    pasteToCurrentCell(text)
   }
 
   fun addCodeCellWithRetry(text: String) {
@@ -154,7 +162,18 @@ class NotebookEditorUiComponent(private val data: ComponentData) : JEditorUiComp
   }
 
   fun addMarkdownCell(content: String) {
-    driver.invokeActionWithRetries("NotebookInsertMarkdownCellAction")
+    addEmptyMarkdownCell()
+    pasteToCurrentCell(content)
+  }
+
+  /**
+   * Adds a new SQL cell to the notebook with the provided content.
+   *
+   * @param content The SQL code to be inserted into the new SQL cell.
+   * @throws IllegalStateException if the notebook does not support SQL cells.
+   */
+  fun addSqlCell(@Language("SQL") content: String) {
+    driver.invokeActionWithRetries("JupyterAddSQLCellAction")
     driver.ui.pasteText(content)
   }
 
@@ -317,7 +336,10 @@ fun Driver.createNewNotebook(name: String = "New Notebook", type: NotebookType) 
 
 fun Driver.createNewNotebookWithMouse(name: String = "New Notebook", type: NotebookType) {
   ideFrame {
-    leftToolWindowToolbar.projectButton.open()
+    waitFor("Project view should present", timeout = 1.minutes) {
+      leftToolWindowToolbar.projectButton.open()
+      projectView().present()
+    }
     projectView {
       projectViewTree.run {
         waitFor("wait for project tree to load", 30.seconds) {

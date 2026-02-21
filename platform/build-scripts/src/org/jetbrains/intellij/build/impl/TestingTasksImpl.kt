@@ -1,5 +1,5 @@
 // Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
-@file:Suppress("ReplacePutWithAssignment", "ReplaceGetOrSet")
+@file:Suppress("ReplacePutWithAssignment", "ReplaceGetOrSet", "BlockingMethodInNonBlockingContext")
 
 package org.jetbrains.intellij.build.impl
 
@@ -20,8 +20,6 @@ import com.intellij.util.io.awaitExit
 import com.intellij.util.lang.UrlClassLoader
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import org.jetbrains.intellij.build.BuildCancellationException
 import org.jetbrains.intellij.build.BuildMessages
@@ -38,6 +36,7 @@ import org.jetbrains.intellij.build.dependencies.TeamCityHelper
 import org.jetbrains.intellij.build.impl.coverage.Coverage
 import org.jetbrains.intellij.build.impl.coverage.CoverageImpl
 import org.jetbrains.intellij.build.io.runProcess
+import org.jetbrains.intellij.build.productLayout.util.mapConcurrent
 import org.jetbrains.intellij.build.telemetry.TraceManager.spanBuilder
 import org.jetbrains.intellij.build.telemetry.block
 import org.jetbrains.intellij.build.telemetry.use
@@ -603,7 +602,7 @@ internal class TestingTasksImpl(context: CompilationContext, private val options
     val customMemoryOptions = options.jvmMemoryOptions?.trim()?.split(Regex("\\s+"))?.takeIf { it.isNotEmpty() }
     jvmArgs.addAll(
       index = 0,
-      elements = VmOptionsGenerator.generate(
+      elements = generateVmOptions(
         isEAP = true,
         customVmMemoryOptions = if (customMemoryOptions == null) mapOf("-Xms" to "750m", "-Xmx" to "1024m") else emptyMap(),
         additionalVmOptions = customMemoryOptions ?: emptyList(),
@@ -753,27 +752,25 @@ internal class TestingTasksImpl(context: CompilationContext, private val options
     @Suppress("UNCHECKED_CAST") val testAnnotation = classloader.loadClass(SkipInHeadlessEnvironment::class.java.name) as Class<out Annotation>
     @Suppress("UNCHECKED_CAST") val ignoreAnnotation = classloader.loadClass(IJIgnore::class.java.name) as Class<out Annotation>
 
-    return coroutineScope {
-      context.project.modules.map { module ->
-        async(CoroutineName("loading tests annotated with @SkipInHeadlessEnvironment from the module '${module.name}'")) {
-          val outputRoots = context.outputProvider.getModuleOutputRoots(module, forTests = true)
-          val root = requireNotNull(outputRoots.singleOrNull()) { "More than one output root for module '${module.name}': ${outputRoots.joinToString()}" }
-          if (Files.exists(root)) {
-            ClassFinder(root, "", false).classes
-              .filter {
-                val testClass = classloader.loadClass(it)
-                !Modifier.isAbstract(testClass.modifiers) &&
-                !testClass.isAnnotationPresent(ignoreAnnotation) &&
-                testClass.isAnnotationPresent(testAnnotation)
-              }
-              .map { Pair(it, module.name) }
-          }
-          else {
-            emptyList()
-          }
+    return context.project.modules.mapConcurrent { module ->
+      withContext(CoroutineName("loading tests annotated with @SkipInHeadlessEnvironment from the module '${module.name}'")) {
+        val outputRoots = context.outputProvider.getModuleOutputRoots(module, forTests = true)
+        val root = requireNotNull(outputRoots.singleOrNull()) { "More than one output root for module '${module.name}': ${outputRoots.joinToString()}" }
+        if (Files.exists(root)) {
+          ClassFinder(root, "", false).classes
+            .filter {
+              val testClass = classloader.loadClass(it)
+              !Modifier.isAbstract(testClass.modifiers) &&
+              !testClass.isAnnotationPresent(ignoreAnnotation) &&
+              testClass.isAnnotationPresent(testAnnotation)
+            }
+            .map { Pair(it, module.name) }
+        }
+        else {
+          emptyList()
         }
       }
-    }.flatMap { it.getCompleted() }
+    }.flatten()
   }
 
   private suspend fun runJUnit5Engine(
@@ -802,13 +799,16 @@ internal class TestingTasksImpl(context: CompilationContext, private val options
         val testClassesListFile = Files.createTempFile("tests-to-run-", ".list").apply { Files.delete(this) }
         runJUnit5Engine(
           mainModule = mainModule,
-          systemProperties = systemProperties + ("intellij.build.test.list.classes" to testClassesListFile.absolutePathString()),
+          systemProperties = systemProperties + listOf(
+            "intellij.build.test.list.classes" to testClassesListFile.absolutePathString(),
+            "intellij.build.test.engine.vintage" to "false",
+          ),
           jvmArgs = jvmArgs,
           envVariables = envVariables,
           bootstrapClasspath = bootstrapClasspath,
           modulePath = modulePath,
           testClasspath = testClasspath,
-          suiteName = null,
+          suiteName = "__classpathroot__",
           methodName = null,
           devBuildSettings = null,
         )
@@ -824,13 +824,16 @@ internal class TestingTasksImpl(context: CompilationContext, private val options
         val testClassesListFile = Files.createTempFile("tests-to-run-", ".list").apply { Files.delete(this) }
         runJUnit5Engine(
           mainModule = mainModule,
-          systemProperties = systemProperties + ("intellij.build.test.list.classes" to testClassesListFile.absolutePathString()),
+          systemProperties = systemProperties + listOf(
+            "intellij.build.test.list.classes" to testClassesListFile.absolutePathString(),
+            "intellij.build.test.engine.vintage" to "only",
+            ),
           jvmArgs = jvmArgs,
           envVariables = envVariables,
           bootstrapClasspath = bootstrapClasspath,
           modulePath = modulePath,
           testClasspath = testClasspath,
-          suiteName = options.bootstrapSuite,
+          suiteName = "__classpathroot__",
           methodName = null,
           devBuildSettings = null,
         )
@@ -850,7 +853,7 @@ internal class TestingTasksImpl(context: CompilationContext, private val options
           val exitCode = block("running test class '$testClassName'") {
             runJUnit5Engine(
               mainModule = mainModule,
-              systemProperties = systemProperties + ("idea.performance.tests.discovery.filter" to "true"),
+              systemProperties = systemProperties,
               jvmArgs = jvmArgs,
               envVariables = envVariables,
               bootstrapClasspath = bootstrapClasspath,
@@ -901,13 +904,13 @@ internal class TestingTasksImpl(context: CompilationContext, private val options
           val exitCode = block("running tests in package '$packageName'") {
             runJUnit5Engine(
               mainModule = mainModule,
-              systemProperties = systemProperties + ("idea.performance.tests.discovery.filter" to "true"),
+              systemProperties = systemProperties,
               jvmArgs = jvmArgs,
               envVariables = envVariables,
               bootstrapClasspath = bootstrapClasspath,
               modulePath = modulePath,
               testClasspath = testClasspath,
-              suiteName = "__classes__",
+              suiteName = "__class__",
               methodName = classes.joinToString(";"),
               devBuildSettings = devBuildServerSettings,
             )
@@ -971,13 +974,15 @@ internal class TestingTasksImpl(context: CompilationContext, private val options
           block("run junit 5 tests${spanNameSuffix}") {
             runJUnit5Engine(
               mainModule = mainModule,
-              systemProperties = systemProperties + additionalProperties + additionalPropertiesJUnit5,
+              systemProperties = systemProperties + additionalProperties + additionalPropertiesJUnit5 + listOf(
+                "intellij.build.test.engine.vintage" to "false",
+              ),
               jvmArgs = jvmArgs,
               envVariables = envVariables,
               bootstrapClasspath = bootstrapClasspath,
               modulePath = modulePath,
               testClasspath = testClasspath,
-              suiteName = null,
+              suiteName = "__classpathroot__",
               methodName = null,
               devBuildSettings = devBuildServerSettings,
             )
@@ -993,13 +998,15 @@ internal class TestingTasksImpl(context: CompilationContext, private val options
           block("run junit 3+4 tests${spanNameSuffix}") {
             runJUnit5Engine(
               mainModule = mainModule,
-              systemProperties = systemProperties + additionalProperties + additionalPropertiesJUnit34,
+              systemProperties = systemProperties + additionalProperties + additionalPropertiesJUnit34 + listOf(
+                "intellij.build.test.engine.vintage" to "only",
+              ),
               jvmArgs = jvmArgs,
               envVariables = envVariables,
               bootstrapClasspath = bootstrapClasspath,
               modulePath = modulePath,
               testClasspath = testClasspath,
-              suiteName = options.bootstrapSuite,
+              suiteName = "__classpathroot__",
               methodName = null,
               devBuildSettings = devBuildServerSettings,
             )
@@ -1100,7 +1107,7 @@ internal class TestingTasksImpl(context: CompilationContext, private val options
     bootstrapClasspath: List<String>,
     modulePath: List<String>?,
     testClasspath: List<String>,
-    suiteName: String?,
+    suiteName: String,
     methodName: String?,
     devBuildSettings: DevBuildServerSettings?,
   ): Int {
@@ -1138,7 +1145,7 @@ internal class TestingTasksImpl(context: CompilationContext, private val options
         appendJUnitStarter(classpath, context)
       }
 
-      if (!isBootstrapSuiteDefault || options.isDedicatedTestRuntime != "false" || suiteName == null) {
+      if (!isBootstrapSuiteDefault || options.isDedicatedTestRuntime != "false" || suiteName == null || suiteName == "__classpathroot__") {
         classpath.addAll(testClasspath)
       }
 
@@ -1163,7 +1170,7 @@ internal class TestingTasksImpl(context: CompilationContext, private val options
     envVariables: Map<String, String>,
     modulePath: List<String>?,
     classpath: List<String>,
-    suiteName: String?,
+    suiteName: String,
     methodName: String?,
     devBuildModeSettings: DevBuildServerSettings?,
   ): Int {
@@ -1204,7 +1211,7 @@ internal class TestingTasksImpl(context: CompilationContext, private val options
 
     val environment: MutableMap<String, String> = HashMap(envVariables)
 
-    val mainClass = if (suiteName == null) "com.intellij.tests.JUnit5TeamCityRunnerForTestsOnClasspath" else "com.intellij.tests.JUnit5TeamCityRunnerForTestAllSuite"
+    val mainClass = "com.intellij.tests.JUnit5TeamCityRunner"
     if (devBuildModeSettings == null) {
       args.add(mainClass)
     }
@@ -1212,9 +1219,7 @@ internal class TestingTasksImpl(context: CompilationContext, private val options
       devBuildModeSettings.apply(mainClass, mainModule, args, environment)
     }
 
-    if (suiteName != null) {
-      args.add(suiteName)
-    }
+    args.add(suiteName)
 
     if (methodName != null) {
       args.add(methodName)

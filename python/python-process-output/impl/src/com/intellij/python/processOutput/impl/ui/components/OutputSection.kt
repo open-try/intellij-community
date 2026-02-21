@@ -40,13 +40,12 @@ import com.intellij.python.processOutput.impl.ui.Colors
 import com.intellij.python.processOutput.impl.ui.Icons
 import com.intellij.python.processOutput.impl.ui.collectReplayAsState
 import com.intellij.python.processOutput.impl.ui.thenIfNotNull
-import kotlinx.collections.immutable.persistentListOf
 import org.jetbrains.jewel.foundation.theme.JewelTheme
 import org.jetbrains.jewel.ui.component.Text
 import org.jetbrains.jewel.ui.component.VerticallyScrollableContainer
 import org.jetbrains.jewel.ui.component.scrollbarContentSafePadding
 
-private object Styling {
+private object OutputSectionStyling {
     val COPY_SECTION_BUTTON_SPACE_SIZE = 18.dp
     val LINE_START_PADDING = 8.dp
     val LINE_HORIZONTAL_ALIGNMENT = 10.dp
@@ -73,14 +72,10 @@ internal fun OutputSection(controller: ProcessOutputController) {
 
             FilterActionGroup(
                 tooltipText = message("process.output.viewOptions.tooltip"),
-                items = persistentListOf(
-                    FilterEntry(
-                        item = OutputFilter.ShowTags,
-                        testTag = OutputSectionTestTags.FILTERS_TAGS,
-                    ),
-                ),
-                isSelected = { controller.processOutputUiState.filters.contains(it) },
-                onItemClick = { controller.toggleOutputFilter(it) },
+                state = controller.processOutputUiState.filters,
+                onFilterItemToggled = { filterItem, enabled ->
+                    controller.onOutputFilterItemToggled(filterItem, enabled)
+                },
                 modifier = Modifier.testTag(OutputSectionTestTags.FILTERS_BUTTON),
                 menuModifier = Modifier.testTag(OutputSectionTestTags.FILTERS_MENU),
             )
@@ -110,8 +105,8 @@ internal fun OutputSection(controller: ProcessOutputController) {
                 val isOutputExpandedState =
                     controller.processOutputUiState.isOutputExpanded.collectAsState()
 
-                val isDisplayTags = controller.processOutputUiState.filters.contains(
-                    OutputFilter.ShowTags,
+                val isDisplayTags = controller.processOutputUiState.filters.active.contains(
+                    OutputFilter.Item.SHOW_TAGS,
                 )
 
                 SelectionContainer {
@@ -218,7 +213,7 @@ internal fun OutputSection(controller: ProcessOutputController) {
                                         textStyle = SpanStyle(
                                             color =
                                                 if (exitInfo.exitValue != 0) {
-                                                    Colors.Output.ErrorText
+                                                    Colors.ErrorText
                                                 } else {
                                                     Color.Unspecified
                                                 },
@@ -254,9 +249,9 @@ private fun OutputLine(
             modifier = Modifier.fillMaxWidth()
                 .padding(
                     end = scrollbarContentSafePadding(),
-                    start = Styling.LINE_START_PADDING,
+                    start = OutputSectionStyling.LINE_START_PADDING,
                 ),
-            horizontalArrangement = Arrangement.spacedBy(Styling.LINE_HORIZONTAL_ALIGNMENT),
+            horizontalArrangement = Arrangement.spacedBy(OutputSectionStyling.LINE_HORIZONTAL_ALIGNMENT),
         ) {
             if (displayTags) {
                 DisableSelection {
@@ -293,7 +288,7 @@ private fun OutputLine(
             if (sectionIndicator != null) {
                 ActionIconButton(
                     modifier = Modifier
-                        .size(Styling.COPY_SECTION_BUTTON_SPACE_SIZE)
+                        .size(OutputSectionStyling.COPY_SECTION_BUTTON_SPACE_SIZE)
                         .testTag(sectionIndicator.copyButtonTestTag),
                     iconKey = Icons.Keys.Copy,
                     tooltipText = message("process.output.output.copySection.tooltip"),
@@ -301,7 +296,7 @@ private fun OutputLine(
                 )
             } else {
                 Spacer(
-                    modifier = Modifier.size(Styling.COPY_SECTION_BUTTON_SPACE_SIZE),
+                    modifier = Modifier.size(OutputSectionStyling.COPY_SECTION_BUTTON_SPACE_SIZE),
                 )
             }
         }
@@ -385,9 +380,9 @@ private fun LazyListScope.infoLineItemSingle(
                 modifier = Modifier.fillMaxWidth()
                     .padding(
                         end = scrollbarContentSafePadding(),
-                        start = Styling.LINE_START_PADDING,
+                        start = OutputSectionStyling.LINE_START_PADDING,
                     ),
-                horizontalArrangement = Arrangement.spacedBy(Styling.LINE_HORIZONTAL_ALIGNMENT),
+                horizontalArrangement = Arrangement.spacedBy(OutputSectionStyling.LINE_HORIZONTAL_ALIGNMENT),
             ) {
                 Text(
                     text =
@@ -417,7 +412,7 @@ private fun LazyListScope.infoLineItemSingle(
 
 @Composable
 private fun LineSpacer() {
-    Spacer(modifier = Modifier.height(Styling.LINE_SPACER_HEIGHT))
+    Spacer(modifier = Modifier.height(OutputSectionStyling.LINE_SPACER_HEIGHT))
 }
 
 private sealed class InfoLine {

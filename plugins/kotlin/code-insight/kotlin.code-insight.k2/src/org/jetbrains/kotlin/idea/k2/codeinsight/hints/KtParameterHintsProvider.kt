@@ -60,16 +60,20 @@ import org.jetbrains.kotlin.idea.codeInsight.hints.SHOW_EXCLUDED_PARAMETERS
 import org.jetbrains.kotlin.idea.codeinsights.impl.base.ArgumentNameCommentInfo
 import org.jetbrains.kotlin.idea.codeinsights.impl.base.isExpectedArgumentNameComment
 import org.jetbrains.kotlin.idea.util.application.isUnitTestMode
+import org.jetbrains.kotlin.idea.util.realName
 import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.psi.KtBlockExpression
 import org.jetbrains.kotlin.psi.KtCallElement
 import org.jetbrains.kotlin.psi.KtCallExpression
+import org.jetbrains.kotlin.psi.KtClass
 import org.jetbrains.kotlin.psi.KtExpression
 import org.jetbrains.kotlin.psi.KtFunctionLiteral
 import org.jetbrains.kotlin.psi.KtLabeledExpression
 import org.jetbrains.kotlin.psi.KtNameReferenceExpression
 import org.jetbrains.kotlin.psi.KtNamedDeclaration
+import org.jetbrains.kotlin.psi.KtNamedFunction
 import org.jetbrains.kotlin.psi.KtParameter
+import org.jetbrains.kotlin.psi.KtTypeReference
 import org.jetbrains.kotlin.psi.KtValueArgument
 import org.jetbrains.kotlin.psi.KtValueArgumentList
 import org.jetbrains.kotlin.psi.psiUtil.getParentOfType
@@ -169,13 +173,13 @@ class KtParameterHintsProvider : AbstractKtInlayHintsProvider() {
                     parameterSymbol to name
                 }
             } else {
-                valueParameters.map { it to it.name }
+                valueParameters.map { it to (it.realName ?: it.name) }
             }
         return valueParametersWithNames
     }
 
     @OptIn(KaExperimentalApi::class)
-    context(_: KaSession)
+    context(session: KaSession)
     private fun collectFromParameters(
         callElement: KtCallElement,
         functionCall: KaFunctionCall<*>,
@@ -194,7 +198,7 @@ class KtParameterHintsProvider : AbstractKtInlayHintsProvider() {
             collectContextParameters(callElement, sink, contextMenuPayloads, contextParameterPairs, valueParametersWithNames)
         }
 
-        val args: Map<KtExpression, KaVariableSignature<KaValueParameterSymbol>> = functionCall.argumentMapping
+        val args: Map<KtExpression, KaVariableSignature<KaValueParameterSymbol>> = functionCall.valueArgumentMapping
         val referencedName = (callElement.calleeExpression as? KtNameReferenceExpression)?.getReferencedName()
         for (indexedValue in valueParametersWithNames.withIndex()) {
             val (symbol, name) = indexedValue.value
@@ -214,7 +218,7 @@ class KtParameterHintsProvider : AbstractKtInlayHintsProvider() {
                 continue
             }
 
-            if (argument.isArgumentNamed(symbol)) {
+            if (argument.isArgumentNamed(symbol, session)) {
                 continue
             }
 
@@ -325,7 +329,7 @@ class KtParameterHintsProvider : AbstractKtInlayHintsProvider() {
                         (callExpression.parent as? KtLabeledExpression)?.getLabelName()
                             ?: (callExpression.calleeExpression as? KtNameReferenceExpression)?.getReferencedName()
                     } else {
-                        null
+                        (psi.parent.parent as? KtLabeledExpression)?.getLabelName()
                     }
                 val owningCallableSymbol = receiverParameterSymbol.owningCallableSymbol
 
@@ -336,18 +340,22 @@ class KtParameterHintsProvider : AbstractKtInlayHintsProvider() {
                     }
                 } ?: return
             }
+            is KtClass, is KtTypeReference -> "this"
             else -> null
         } ?: return
 
         val targetPsi = when(valueSymbol) {
-            is KaReceiverParameterSymbol -> valueSymbol.owningCallableSymbol.psi
+            is KaReceiverParameterSymbol -> {
+                val element = valueSymbol.owningCallableSymbol.psi
+                (element as? KtNamedFunction)?.receiverTypeReference ?: element
+            }
             else -> valueSymbol.psi
         }
 
         text(symbolPsi, targetPsi?.asNavigatablePsiLoad())
     }
 
-    private fun KtValueArgument.isArgumentNamed(symbol: KaValueParameterSymbol): Boolean {
+    private fun KtValueArgument.isArgumentNamed(symbol: KaValueParameterSymbol, session: KaSession): Boolean {
         // avoid cases like "`value =` value"
         val argumentText = this.text
         val symbolName = symbol.name.asString()
@@ -360,7 +368,7 @@ class KtParameterHintsProvider : AbstractKtInlayHintsProvider() {
         while (sibling != null) {
             when(sibling) {
                 is PsiComment -> {
-                    val argumentNameCommentInfo = ArgumentNameCommentInfo(symbol)
+                    val argumentNameCommentInfo = ArgumentNameCommentInfo(symbol, session)
                     return sibling.isExpectedArgumentNameComment(argumentNameCommentInfo)
                 }
                 !is PsiWhiteSpace -> break

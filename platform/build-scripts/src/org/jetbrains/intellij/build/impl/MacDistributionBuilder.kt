@@ -1,4 +1,6 @@
 // Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
+@file:Suppress("BlockingMethodInNonBlockingContext")
+
 package org.jetbrains.intellij.build.impl
 
 import com.intellij.openapi.util.SystemInfoRt
@@ -7,7 +9,6 @@ import com.intellij.platform.buildData.productInfo.ProductInfoLaunchData
 import com.intellij.util.io.Decompressor
 import io.opentelemetry.api.common.AttributeKey
 import io.opentelemetry.api.trace.Span
-import kotlinx.collections.immutable.persistentListOf
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -275,13 +276,21 @@ class MacDistributionBuilder(
     MachOUuid(copy, customizer, context).patch()
     copyFile(licensePath, macDistDir.resolve("license/launcher-third-party-libraries.html"))
 
-    val icnsPath = customizer.icnsPathForEAP?.takeIf { context.applicationInfo.isEAP } ?: customizer.icnsPath
+    val icnsPath = locateIcnsForMacApp(customizer, context)
     val resourcesDistDir = macDistDir.resolve("Resources")
     copyFile(icnsPath, resourcesDistDir.resolve(targetIcnsFileName))
 
+    @Suppress("DEPRECATION")
     val alternativeIcon = customizer.icnsPathForAlternativeIconForEAP?.takeIf { context.applicationInfo.isEAP } ?: customizer.icnsPathForAlternativeIcon
     if (alternativeIcon != null) {
       copyFile(alternativeIcon, resourcesDistDir.resolve("custom.icns"))
+    }
+    if (context.isEmbeddedFrontendEnabled) {
+      val icnsForFrontendApp = locateIcnsForFrontendMacApp(context)
+      if (icnsForFrontendApp != null) {
+        //path to the copied file will be passed as the value of `apple.awt.application.icon` property in `getAdditionalEmbeddedClientVmOptions`
+        copyFile(icnsForFrontendApp, resourcesDistDir.resolve("frontend.icns"))
+      }
     }
 
     for (fileAssociation in customizer.fileAssociations) {
@@ -518,9 +527,9 @@ class MacDistributionBuilder(
 
   private fun writeMacOsVmOptions(distBinDir: Path, context: BuildContext): Path {
     val executable = context.productProperties.baseFileName
-    val vmOptions = VmOptionsGenerator.generate(context).asSequence() + sequenceOf("-Dapple.awt.application.appearance=system")
+    val vmOptions = generateVmOptions(context).asSequence() + sequenceOf("-Dapple.awt.application.appearance=system")
     val vmOptionsPath = distBinDir.resolve("${executable}.vmoptions")
-    VmOptionsGenerator.writeVmOptions(vmOptionsPath, vmOptions, separator = "\n")
+    writeVmOptions(vmOptionsPath, vmOptions, separator = "\n")
     return vmOptionsPath
   }
 
@@ -660,75 +669,75 @@ class MacDistributionBuilder(
       NioFiles.deleteRecursively(tempDir)
     }
   }
+}
 
-  private fun prepareDmgBuildScripts(tempDir: Path, staple: Boolean, customizer: MacDistributionCustomizer, context: BuildContext): Path {
-    NioFiles.deleteRecursively(tempDir)
-    Files.createDirectories(tempDir)
-    val dmgImageCopy = tempDir.resolve("${context.fullBuildNumber}.png")
-    Files.copy((if (context.applicationInfo.isEAP) customizer.dmgImagePathForEAP else null) ?: customizer.dmgImagePath, dmgImageCopy)
-    val scriptsDir = context.paths.communityHomeDir.resolve("platform/build-scripts/tools/mac/scripts")
-    Files.copy(scriptsDir.resolve("makedmg.sh"), tempDir.resolve("makedmg.sh"), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES)
-    NioFiles.setExecutable(tempDir.resolve("makedmg.sh"))
-    Files.copy(scriptsDir.resolve("makedmg.py"), tempDir.resolve("makedmg.py"), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES)
-    Files.copy(scriptsDir.resolve("staple.sh"), tempDir.resolve("staple.sh"), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES)
-    val entrypoint = tempDir.resolve("build.sh")
-    Files.writeString(
-      entrypoint,
-      Files.readString(scriptsDir.resolve("build-template.sh"))
-        .resolveTemplateVar("staple", "$staple")
-        .resolveTemplateVar("appName", context.fullBuildNumber)
-        .resolveTemplateVar("contentSigned", "${context.isMacCodeSignEnabled}")
-        .resolveTemplateVar("buildDateInSeconds", "${context.options.buildDateInSeconds}")
-    )
-    NioFiles.setExecutable(entrypoint)
-    return entrypoint
+private fun prepareDmgBuildScripts(tempDir: Path, staple: Boolean, customizer: MacDistributionCustomizer, context: BuildContext): Path {
+  NioFiles.deleteRecursively(tempDir)
+  Files.createDirectories(tempDir)
+  val dmgImageCopy = tempDir.resolve("${context.fullBuildNumber}.png")
+    Files.copy(locateDmgImageForMacApp(customizer, context), dmgImageCopy)
+  val scriptsDir = context.paths.communityHomeDir.resolve("platform/build-scripts/tools/mac/scripts")
+  Files.copy(scriptsDir.resolve("makedmg.sh"), tempDir.resolve("makedmg.sh"), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES)
+  NioFiles.setExecutable(tempDir.resolve("makedmg.sh"))
+  Files.copy(scriptsDir.resolve("makedmg.py"), tempDir.resolve("makedmg.py"), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES)
+  Files.copy(scriptsDir.resolve("staple.sh"), tempDir.resolve("staple.sh"), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES)
+  val entrypoint = tempDir.resolve("build.sh")
+  Files.writeString(
+    entrypoint,
+    Files.readString(scriptsDir.resolve("build-template.sh"))
+      .resolveTemplateVar("staple", "$staple")
+      .resolveTemplateVar("appName", context.fullBuildNumber)
+      .resolveTemplateVar("contentSigned", "${context.isMacCodeSignEnabled}")
+      .resolveTemplateVar("buildDateInSeconds", "${context.options.buildDateInSeconds}")
+  )
+  NioFiles.setExecutable(entrypoint)
+  return entrypoint
+}
+
+private fun String.resolveTemplateVar(variable: String, value: String): String {
+  val reference = "%$variable%"
+  check(contains(reference)) { "No $reference is found in:\n'$this'" }
+  return replace(reference, value)
+}
+
+private fun publishDmgBuildScripts(entrypoint: Path, tempDir: Path, context: BuildContext) {
+  val artifactDir = context.paths.artifactDir.resolve("macos-dmg-build")
+  artifactDir.createDirectories()
+  synchronized("$artifactDir".intern()) {
+    tempDir.listDirectoryEntries().forEach {
+      Files.copy(it, artifactDir.resolve(it.name), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES)
+    }
+    val message = """
+  To build .dmg(s):
+  1. transfer .sit(s) to macOS host;
+  2. transfer ${artifactDir.name}/ content to the same folder;
+  3. execute ${entrypoint.name} from Terminal. 
+  .dmg(s) will be built in the same folder.
+""".trimIndent()
+    artifactDir.resolve("README.txt").writeText(message)
+    context.messages.info(message)
+    context.notifyArtifactBuilt(artifactDir)
+  }
+}
+
+private suspend fun generateIntegrityManifest(sitFile: Path, sitRoot: String, arch: JvmArchitecture, context: BuildContext) {
+  if (context.options.buildStepsToSkip.contains(BuildOptions.REPAIR_UTILITY_BUNDLE_STEP)) {
+    return
   }
 
-  private fun String.resolveTemplateVar(variable: String, value: String): String {
-    val reference = "%$variable%"
-    check(contains(reference)) { "No $reference is found in:\n'$this'" }
-    return replace(reference, value)
+  val tempSit = Files.createTempDirectory(context.paths.tempDir, "sit-")
+  try {
+    spanBuilder("extracting ${sitFile.name}").use(Dispatchers.IO) {
+      Decompressor.Zip(sitFile)
+        .withZipExtensions()
+        .extract(tempSit)
+    }
+    RepairUtilityBuilder.generateManifest(tempSit.resolve(sitRoot), OsFamily.MACOS, arch, context)
   }
-
-  private fun publishDmgBuildScripts(entrypoint: Path, tempDir: Path, context: BuildContext) {
-    val artifactDir = context.paths.artifactDir.resolve("macos-dmg-build")
-    artifactDir.createDirectories()
-    synchronized("$artifactDir".intern()) {
-      tempDir.listDirectoryEntries().forEach {
-        Files.copy(it, artifactDir.resolve(it.name), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES)
-      }
-      val message = """
-    To build .dmg(s):
-    1. transfer .sit(s) to macOS host;
-    2. transfer ${artifactDir.name}/ content to the same folder;
-    3. execute ${entrypoint.name} from Terminal. 
-    .dmg(s) will be built in the same folder.
-  """.trimIndent()
-      artifactDir.resolve("README.txt").writeText(message)
-      context.messages.info(message)
-      context.notifyArtifactBuilt(artifactDir)
-    }
-  }
-
-  private suspend fun generateIntegrityManifest(sitFile: Path, sitRoot: String, arch: JvmArchitecture, context: BuildContext) {
-    if (context.options.buildStepsToSkip.contains(BuildOptions.REPAIR_UTILITY_BUNDLE_STEP)) {
-      return
-    }
-
-    val tempSit = Files.createTempDirectory(context.paths.tempDir, "sit-")
-    try {
-      spanBuilder("extracting ${sitFile.name}").use(Dispatchers.IO) {
-        Decompressor.Zip(sitFile)
-          .withZipExtensions()
-          .extract(tempSit)
-      }
-      RepairUtilityBuilder.generateManifest(tempSit.resolve(sitRoot), OsFamily.MACOS, arch, context)
-    }
-    finally {
-      withContext(Dispatchers.IO + NonCancellable) {
-        @OptIn(ExperimentalPathApi::class)
-        tempSit.deleteRecursively()
-      }
+  finally {
+    withContext(Dispatchers.IO + NonCancellable) {
+      @OptIn(ExperimentalPathApi::class)
+      tempSit.deleteRecursively()
     }
   }
 }

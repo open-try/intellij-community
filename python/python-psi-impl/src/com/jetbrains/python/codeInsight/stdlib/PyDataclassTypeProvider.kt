@@ -47,6 +47,8 @@ import com.jetbrains.python.psi.types.PyType
 import com.jetbrains.python.psi.types.PyTypeMember
 import com.jetbrains.python.psi.types.PyTypeProviderBase
 import com.jetbrains.python.psi.types.PyTypeUtil
+import com.jetbrains.python.psi.types.PyTypeUtil.notNullToRef
+import com.jetbrains.python.psi.types.PyTypeUtil.toStream
 import com.jetbrains.python.psi.types.PyUnionType
 import com.jetbrains.python.psi.types.TypeEvalContext
 import one.util.streamex.StreamEx
@@ -71,7 +73,7 @@ class PyDataclassTypeProvider : PyTypeProviderBase() {
       else -> null
     }
 
-    return PyTypeUtil.notNullToRef(result)
+    return result.notNullToRef
   }
 
   override fun getParameterType(param: PyNamedParameter, func: PyFunction, context: TypeEvalContext): Ref<PyType>? {
@@ -93,7 +95,7 @@ class PyDataclassTypeProvider : PyTypeProviderBase() {
   }
 
   override fun prepareCalleeTypeForCall(type: PyType?, call: PyCallExpression, context: TypeEvalContext): Ref<PyCallableType?>? {
-    for (t in PyTypeUtil.toStream(type)) {
+    for (t in type.toStream()) {
       if (t !is PyClassType) {
         continue
       }
@@ -113,6 +115,9 @@ class PyDataclassTypeProvider : PyTypeProviderBase() {
       return null
     }
     val dataclassParameters = parseDataclassParameters(type.pyClass, context.typeEvalContext) ?: return null
+    if (PyNames.MATCH_ARGS == name) {
+      return getMatchArgsMemberType(type, dataclassParameters, context.typeEvalContext)
+    }
     if (PyNames.HASH == name) {
       // See `unsafe_hash` section here https://docs.python.org/3/library/dataclasses.html
       if (dataclassParameters.unsafeHash) {
@@ -185,9 +190,15 @@ class PyDataclassTypeProvider : PyTypeProviderBase() {
     @ApiStatus.Internal
     class InitVarInfo(val targetExpression: PyTargetExpression, val type: PyType?)
 
-    fun getGeneratedMatchArgs(classType: PyClassType, context: TypeEvalContext): List<String>? {
-      if (parseDataclassParameters(classType.pyClass, context)?.matchArgs != true) return null
-      return getDataclassTypeForClass(classType, context)?.getParameters(context)?.mapNotNull { it.name }
+    private fun getMatchArgsMemberType(
+      type: PyClassType,
+      dataclassParameters: PyDataclassParameters,
+      context: TypeEvalContext,
+    ): List<PyTypeMember>? {
+      if (!dataclassParameters.matchArgs) return null
+      val fieldNames = getDataclassTypeForClass(type, context)?.getParameters(context)?.mapNotNull { it.name } ?: return null
+      val matchArgsType = PyTypeUtil.createTupleOfLiteralStringsType(type.pyClass, fieldNames) ?: return null
+      return listOf(PyTypeMember(null, matchArgsType))
     }
 
     private fun getDataclassesReplaceType(referenceExpression: PyReferenceExpression, context: TypeEvalContext): PyCallableType? {

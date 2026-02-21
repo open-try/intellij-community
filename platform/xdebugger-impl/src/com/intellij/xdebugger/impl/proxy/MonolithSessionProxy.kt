@@ -16,6 +16,7 @@ import com.intellij.openapi.util.Key
 import com.intellij.openapi.util.getOrCreateUserData
 import com.intellij.platform.debugger.impl.rpc.XBreakpointId
 import com.intellij.platform.debugger.impl.rpc.XDebugSessionId
+import com.intellij.platform.debugger.impl.rpc.XExecutionStackId
 import com.intellij.platform.debugger.impl.rpc.XValueId
 import com.intellij.platform.debugger.impl.shared.XDebuggerMonolithAccessPoint
 import com.intellij.platform.debugger.impl.shared.proxy.XBreakpointProxy
@@ -323,6 +324,10 @@ private class XDebugSessionProxyKeeper {
   }
 }
 
+/**
+ * For internal use only. Use [com.intellij.platform.debugger.impl.ui.XDebuggerEntityConverter.asProxy] in other modules.
+ * @see com.intellij.platform.debugger.impl.ui.XDebuggerEntityConverter.asProxy
+ */
 internal fun XDebugSession.asProxy(): XDebugSessionProxy =
   project.service<XDebugSessionProxyKeeper>().getOrCreateProxy(this)
 
@@ -343,6 +348,10 @@ internal class XDebuggerMonolithAccessPointImpl : XDebuggerMonolithAccessPoint {
     return BackendXValueModel.findById(valueId)?.xValue
   }
 
+  override fun getExecutionStack(stackId: XExecutionStackId): XExecutionStack? {
+    return stackId.findValue()?.executionStack
+  }
+
   override fun getBreakpointType(typeId: String): XBreakpointType<*, *>? {
     return XBreakpointUtil.findType(typeId)
   }
@@ -357,5 +366,10 @@ internal class XDebuggerMonolithAccessPointImpl : XDebuggerMonolithAccessPoint {
 
   override fun asProxy(breakpoint: XBreakpoint<*>): XBreakpointProxy? {
     return (breakpoint as? XBreakpointBase<*, *, *>)?.asProxy()
+  }
+
+  override suspend fun <T> withTemporaryXValueId(value: XValue, proxy: XDebugSessionProxy, block: suspend (XValueId) -> T): T {
+    val sessionImpl = getSession(proxy) as XDebugSessionImpl
+    return withTemporaryXValueIdImpl(value, sessionImpl, block)
   }
 }

@@ -1,4 +1,4 @@
-// Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
+// Copyright 2000-2026 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
 package com.intellij.debugger.engine;
 
 import com.intellij.ReviseWhenPortedToJDK;
@@ -7,6 +7,7 @@ import com.intellij.debugger.JavaDebuggerBundle;
 import com.intellij.debugger.PositionManager;
 import com.intellij.debugger.PositionManagerFactory;
 import com.intellij.debugger.engine.evaluation.DebuggerImplicitEvaluationContextUtil;
+import com.intellij.debugger.engine.evaluation.EvaluateException;
 import com.intellij.debugger.engine.evaluation.EvaluationContextImpl;
 import com.intellij.debugger.engine.events.DebuggerCommandImpl;
 import com.intellij.debugger.engine.events.SuspendContextCommandImpl;
@@ -49,6 +50,7 @@ import com.intellij.util.ConcurrencyUtil;
 import com.intellij.util.TimeoutUtil;
 import com.intellij.util.concurrency.AppExecutorUtil;
 import com.intellij.util.containers.ContainerUtil;
+import com.intellij.xdebugger.DapMode;
 import com.intellij.xdebugger.XDebugSession;
 import com.intellij.xdebugger.breakpoints.XBreakpoint;
 import com.intellij.xdebugger.impl.XDebugSessionImpl;
@@ -62,6 +64,7 @@ import com.sun.jdi.ClassType;
 import com.sun.jdi.IncompatibleThreadStateException;
 import com.sun.jdi.InternalException;
 import com.sun.jdi.Location;
+import com.sun.jdi.Method;
 import com.sun.jdi.ReferenceType;
 import com.sun.jdi.ThreadReference;
 import com.sun.jdi.VMDisconnectedException;
@@ -680,6 +683,8 @@ public class DebugProcessEvents extends DebugProcessImpl {
     //LOG.assertTrue(thread.isSuspended());
     preprocessEvent(suspendContext, thread);
 
+    if (fastCheckToSkipBreakpointInEvaluation(suspendContext, event)) return;
+
     //we use schedule to allow processing other events during processing this one
     //this is especially necessary if a method is breakpoint condition
     suspendContext.getManagerThread().schedule(new SuspendContextCommandImpl(suspendContext) {
@@ -689,47 +694,35 @@ public class DebugProcessEvents extends DebugProcessImpl {
         final SuspendManagerImpl suspendManager = (SuspendManagerImpl)getSuspendManager();
 
         final LocatableEventRequestor requestor = (LocatableEventRequestor)RequestManagerImpl.findRequestor(event.request());
-        ThreadReferenceProxyImpl threadProxy = suspendContext.getThread();
-        boolean isEvaluationOnCurrentThread = threadProxy != null && threadProxy.isEvaluating();
 
-        if (!DebuggerSession.enableBreakpointsDuringEvaluation() &&
-            !(requestor instanceof InstrumentationTracker.InstrumentationMethodBreakpoint) &&
-            !(requestor instanceof InstrumentedTechnicalBreakpoint)) {
+        Method checkIsDoneFn = null;
+        EnterAndExitEvaluationCheck enterAndExitEvaluationCheck = myBreakpointCheckFnMap.get(suspendContext.getVirtualMachineProxy());
+        if (enterAndExitEvaluationCheck != null && shouldCheckForSkipBreakpoint(event)) {
+          Method enterBreakpointCheckFn = enterAndExitEvaluationCheck.enterBreakpointCheckFn;
 
-          if (isEvaluationOnCurrentThread || myThreadBlockedMonitor.isInResumeAllMode()) {
-            notifySkippedBreakpointInEvaluation(event, suspendContext);
-            // is inside evaluation, so ignore any breakpoints
-            logSuspendContext(suspendContext,
-                              () -> "Resume because of evaluation: isEvaluationOnCurrentThread = " + isEvaluationOnCurrentThread +
-                              ", myThreadBlockedMonitor.isInResumeAllMode() = " + myThreadBlockedMonitor.isInResumeAllMode());
-            suspendManager.voteResume(suspendContext);
-            return;
+          EvaluationContextImpl evaluationContext = new EvaluationContextImpl(suspendContext, null);
+          try {
+            Value value = invokeMethod(
+              evaluationContext,
+              (ClassType)enterBreakpointCheckFn.declaringType(),
+              enterBreakpointCheckFn,
+              Collections.emptyList()
+            );
+            checkIsDoneFn = enterAndExitEvaluationCheck.checkIsDoneFn;
+            if (value instanceof BooleanValue booleanValue) {
+              if (booleanValue.value()) {
+                notifySkippedBreakpointInEvaluation(event, suspendContext);
+                suspendManager.voteResume(suspendContext);
+                return;
+              }
+            }
+            else {
+              throw new RuntimeException("Expected BooleanValue, got: " + value);
+            }
           }
-
-          if (myIsUnderBreakpointCheckFn != null) {
-            EvaluationContextImpl evaluationContext = new EvaluationContextImpl(suspendContext, null);
-            try {
-              Value value = invokeMethod(
-                evaluationContext,
-                (ClassType)myIsUnderBreakpointCheckFn.declaringType(),
-                myIsUnderBreakpointCheckFn,
-                Collections.emptyList()
-              );
-              if (value instanceof BooleanValue booleanValue) {
-                if (booleanValue.value()) {
-                  notifySkippedBreakpointInEvaluation(event, suspendContext);
-                  suspendManager.voteResume(suspendContext);
-                  return;
-                }
-              }
-              else {
-                throw new RuntimeException("Expected BooleanValue, got: " + value);
-              }
-            }
-            catch (Throwable e) {
-              //TODO: switch off instrumentation breakpoint logic
-              logError("Error evaluating isUnderBreakpointCheckFn", e);
-            }
+          catch (Throwable e) {
+            //TODO: switch off instrumentation breakpoint logic
+            logError("Error evaluating isUnderBreakpointCheckFn", e);
           }
         }
 
@@ -758,6 +751,8 @@ public class DebugProcessEvents extends DebugProcessImpl {
                   notifySkippedBreakpoints(event, SkippedBreakpointReason.STEPPING);
                 }
                 logSuspendContext(suspendContext, () -> "Skip breakpoint because of filter " + filter);
+
+                markForInstrumentationThatBreakpointCheksAreDone(suspendContext, checkIsDoneFn);
                 suspendManager.voteResume(suspendContext);
                 return;
               } else {
@@ -786,6 +781,10 @@ public class DebugProcessEvents extends DebugProcessImpl {
           String title = ex.getTitle();
           final String displayName = DebuggerUtilsImpl.getRequestorStringForUser(requestor);
           requestHit = DebuggerUtilsImpl.askAboutPauseOnException(getProject(), displayName, exceptionMessage, title);
+          // TODO: may be we need to use another approach for letting the user know that the evaluation failed?
+          if (DapMode.isDap()) {
+            printToConsole(JavaDebuggerBundle.message("error.failed.evaluating.breakpoint.condition", displayName, exceptionMessage));
+          }
           resumePreferred = !requestHit;
         }
         catch (VMDisconnectedException e) {
@@ -840,6 +839,8 @@ public class DebugProcessEvents extends DebugProcessImpl {
           }
         }
 
+        markForInstrumentationThatBreakpointCheksAreDone(suspendContext, checkIsDoneFn);
+
         if (!requestHit || resumePreferred) {
           boolean finalRequestHit = requestHit;
           boolean finalResumePreferred = resumePreferred;
@@ -867,6 +868,52 @@ public class DebugProcessEvents extends DebugProcessImpl {
         }
       }
     });
+  }
+
+  private void markForInstrumentationThatBreakpointCheksAreDone(@NotNull SuspendContextImpl suspendContext, Method checkIsDoneFn) {
+    if (checkIsDoneFn == null) {
+      return;
+    }
+    EvaluationContextImpl evaluationContext = new EvaluationContextImpl(suspendContext, null);
+
+    try {
+      invokeMethod(evaluationContext, (ClassType)checkIsDoneFn.declaringType(), checkIsDoneFn, Collections.emptyList());
+    }
+    catch (EvaluateException e) {
+      throw new RuntimeException(e);
+    }
+  }
+
+  private static boolean shouldCheckForSkipBreakpoint(LocatableEvent event) {
+    final LocatableEventRequestor requestor = (LocatableEventRequestor)RequestManagerImpl.findRequestor(event.request());
+
+    return !DebuggerSession.enableBreakpointsDuringEvaluation() &&
+           !(requestor instanceof InstrumentationTracker.InstrumentationMethodBreakpoint) &&
+           !(requestor instanceof InstrumentedTechnicalBreakpoint);
+  }
+
+  private boolean fastCheckToSkipBreakpointInEvaluation(SuspendContextImpl suspendContext, LocatableEvent event) {
+    if (shouldCheckForSkipBreakpoint(event)) {
+      ThreadReferenceProxyImpl threadProxy = suspendContext.getThread();
+      boolean isEvaluationOnCurrentThread = threadProxy != null && threadProxy.isEvaluating();
+
+      if (isEvaluationOnCurrentThread || myThreadBlockedMonitor.isInResumeAllMode()) {
+        final LocatableEventRequestor requestor = (LocatableEventRequestor)RequestManagerImpl.findRequestor(event.request());
+
+        // Do not report anything for low-level technical events
+        if (requestor == null || !requestor.shouldIgnoreThreadFiltering()) {
+          notifySkippedBreakpointInEvaluation(event, suspendContext);
+        }
+
+        // is inside evaluation, so ignore any breakpoints
+        logSuspendContext(suspendContext,
+                          () -> "Resume because of evaluation: isEvaluationOnCurrentThread = " + isEvaluationOnCurrentThread +
+                                ", myThreadBlockedMonitor.isInResumeAllMode() = " + myThreadBlockedMonitor.isInResumeAllMode());
+        getSuspendManager().voteResume(suspendContext);
+        return true;
+      }
+    }
+    return false;
   }
 
 

@@ -7,9 +7,11 @@ import com.intellij.codeInsight.multiverse.EditorContextManager;
 import com.intellij.lang.ASTNode;
 import com.intellij.lang.Language;
 import com.intellij.lang.injection.InjectedLanguageManager;
+import com.intellij.openapi.application.RuntimeFlagsKt;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Caret;
 import com.intellij.openapi.editor.Editor;
+import com.intellij.openapi.editor.ModNavigator;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.openapi.vfs.VFileProperty;
@@ -70,6 +72,23 @@ public final class PsiUtilBase extends PsiUtilCore implements PsiEditorUtil {
     return narrowLanguage(lang, file.getLanguage());
   }
 
+  /**
+   * @param navigator navigator to use
+   * @return language near the caret position of the specified navigator
+   */
+  public static @NotNull Language getLanguageInModNavigator(@NotNull ModNavigator navigator) {
+    PsiFile file = navigator.getPsiFile();
+
+    if (file instanceof PsiFileWithOneLanguage) {
+      return file.getLanguage();
+    }
+
+    PsiElement elt = getElementAtOffset(file, navigator.getCaretOffset());
+    Language lang = findLanguageFromElement(elt);
+
+    return narrowLanguage(lang, file.getLanguage());
+  }
+
   public static @Nullable PsiElement getElementAtCaret(@NotNull Editor editor) {
     Project project = editor.getProject();
     if (project == null) return null;
@@ -91,7 +110,7 @@ public final class PsiUtilBase extends PsiUtilCore implements PsiEditorUtil {
 
     ensureValid(psiFile);
 
-    if (psiFile instanceof PsiFileWithOneLanguage) {
+    if (psiFile instanceof PsiFileWithOneLanguage || RuntimeFlagsKt.isEditorLockFreeTypingEnabled()) {
       return psiFile;
     }
 
@@ -102,6 +121,26 @@ public final class PsiUtilBase extends PsiUtilCore implements PsiEditorUtil {
     int caretOffset = caret.getOffset();
     int mostProbablyCorrectLanguageOffset = caretOffset == caret.getSelectionEnd() ? caret.getSelectionStart() : caretOffset;
     return getPsiFileAtOffset(psiFile, mostProbablyCorrectLanguageOffset);
+  }
+
+  /**
+   * @param navigator navigator to use
+   * @return the most relevant PsiFile to the caret position 
+   * (may differ from {@link ModNavigator#getPsiFile()} if there are several languages in the file).
+   */
+  public static @NotNull PsiFile getPsiFileInModNavigator(@NotNull ModNavigator navigator) {
+    PsiFile psiFile = navigator.getPsiFile();
+
+    ensureValid(psiFile);
+
+    if (psiFile instanceof PsiFileWithOneLanguage) {
+      return psiFile;
+    }
+
+    final Language language = getLanguageInModNavigator(navigator);
+
+    if (language == psiFile.getLanguage()) return psiFile;
+    return getPsiFileAtOffset(psiFile, navigator.getCaretOffset());
   }
 
   /**
